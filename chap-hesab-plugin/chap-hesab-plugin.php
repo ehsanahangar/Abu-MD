@@ -78,6 +78,16 @@ function chap_hesab_add_admin_menu() {
         'chap-hesab-reports',
         'chap_hesab_reports_page_html'
     );
+
+// Add sub-menu page for Settings
+add_submenu_page(
+    'chap-hesab-main',
+    'تنظیمات',
+    'تنظیمات',
+    'manage_options',
+    'chap-hesab-settings',
+    'chap_hesab_settings_page_html'
+);
 }
 add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
 
@@ -288,10 +298,17 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
         return;
     }
 
-    // Helper data
-    $company_info = ['name' => 'اشک قلم', 'phone' => '۰۹۱۵۳۱۰۸۷۶۳', 'email' => 'ehsanahangar2010@gmail.com'];
-    $quotes = ["آنکه می‌اندیشد، به هدف می‌رسد. - امام علی (ع)", "دانش، میراثی گرانبهاست. - امام علی (ع)", "هنر، کلید فهم زندگی است. - سهراب سپهری"];
-    $random_quote = $quotes[array_rand($quotes)];
+    // Get settings
+    $options = get_option('chap_hesab_options');
+    $company_info = [
+        'name' => !empty($options['company_name']) ? $options['company_name'] : 'اشک قلم',
+        'phone' => !empty($options['company_phone']) ? $options['company_phone'] : '۰۹۱۵۳۱۰۸۷۶۳',
+        'email' => !empty($options['company_email']) ? $options['company_email'] : 'ehsanahangar2010@gmail.com',
+    ];
+    $quotes_text = !empty($options['invoice_quotes']) ? $options['invoice_quotes'] : "آنکه می‌اندیشد، به هدف می‌رسد. - امام علی (ع)";
+    $quotes = array_filter(array_map('trim', explode("\n", $quotes_text)));
+    $random_quote = !empty($quotes) ? $quotes[array_rand($quotes)] : '';
+
     list($g_y, $g_m, $g_d) = explode('-', date('Y-m-d', strtotime($invoice->invoice_date)));
     $jalali_date = chap_hesab_gregorian_to_jalali($g_y, $g_m, $g_d);
 
@@ -1186,3 +1203,48 @@ function chap_hesab_update_check_status_handler() {
     exit;
 }
 add_action( 'admin_post_chap_hesab_update_check_status', 'chap_hesab_update_check_status_handler' );
+
+// -- SETTINGS API --
+
+function chap_hesab_register_settings() {
+    register_setting( 'chap_hesab_settings_group', 'chap_hesab_options' );
+
+    add_settings_section( 'chap_hesab_company_section', 'اطلاعات شرکت', null, 'chap-hesab-settings' );
+    add_settings_field( 'company_name', 'نام شرکت', 'chap_hesab_render_text_field', 'chap-hesab-settings', 'chap_hesab_company_section', ['name' => 'company_name'] );
+    add_settings_field( 'company_phone', 'تلفن', 'chap_hesab_render_text_field', 'chap-hesab-settings', 'chap_hesab_company_section', ['name' => 'company_phone'] );
+    add_settings_field( 'company_email', 'ایمیل', 'chap_hesab_render_text_field', 'chap-hesab-settings', 'chap_hesab_company_section', ['name' => 'company_email'] );
+
+    add_settings_section( 'chap_hesab_invoice_section', 'تنظیمات فاکتور', null, 'chap-hesab-settings' );
+    add_settings_field( 'invoice_quotes', 'جملات قصار (هر جمله در یک خط)', 'chap_hesab_render_textarea_field', 'chap-hesab-settings', 'chap_hesab_invoice_section', ['name' => 'invoice_quotes'] );
+}
+add_action( 'admin_init', 'chap_hesab_register_settings' );
+
+function chap_hesab_render_text_field( $args ) {
+    $options = get_option( 'chap_hesab_options' );
+    $value = isset( $options[$args['name']] ) ? esc_attr( $options[$args['name']] ) : '';
+    echo "<input type='text' name='chap_hesab_options[{$args['name']}]' value='{$value}' class='regular-text' />";
+}
+
+function chap_hesab_render_textarea_field( $args ) {
+    $options = get_option( 'chap_hesab_options' );
+    $value = isset( $options[$args['name']] ) ? esc_textarea( $options[$args['name']] ) : '';
+    echo "<textarea name='chap_hesab_options[{$args['name']}]' rows='5' class='large-text'>{$value}</textarea>";
+}
+
+function chap_hesab_settings_page_html() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+    ?>
+    <div class="wrap">
+        <h1>تنظیمات پلاگین حسابداری</h1>
+        <form action="options.php" method="post">
+            <?php
+            settings_fields( 'chap_hesab_settings_group' );
+            do_settings_sections( 'chap-hesab-settings' );
+            submit_button();
+            ?>
+        </form>
+    </div>
+    <?php
+}
