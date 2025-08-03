@@ -62,9 +62,22 @@ add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
  * Renders the HTML for the Invoices List page.
  */
 function chap_hesab_invoices_list_page_html() {
+    global $wpdb;
     if ( ! current_user_can( 'manage_options' ) ) {
         return;
     }
+
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+
+    // Fetch invoices with customer names
+    $invoices_list = $wpdb->get_results( $wpdb->prepare(
+        "SELECT i.id, i.total_amount, i.status, i.invoice_date, c.name as customer_name
+         FROM %i AS i
+         LEFT JOIN %i AS c ON i.customer_id = c.id
+         ORDER BY i.id DESC",
+        $invoices_table, $customers_table
+    ) );
     ?>
     <div class="wrap">
         <h1>لیست فاکتورها <a href="<?php echo admin_url('admin.php?page=chap-hesab-invoice-new'); ?>" class="page-title-action">صدور فاکتور جدید</a></h1>
@@ -78,23 +91,42 @@ function chap_hesab_invoices_list_page_html() {
         }
         ?>
 
-        <p>در مرحله بعدی، این لیست با اطلاعات واقعی فاکتورها پر خواهد شد.</p>
-
-        <!-- Placeholder for the invoice list table -->
         <table class="wp-list-table widefat fixed striped">
             <thead>
                 <tr>
-                    <th style="width:10%;">ID فاکتور</th>
+                    <th style="width:10%;">شماره فاکتور</th>
                     <th>مشتری</th>
                     <th>مبلغ کل</th>
                     <th>تاریخ صدور</th>
-                    <th style="width:15%;">وضعیت</th>
+                    <th style="width:10%;">وضعیت</th>
+                    <th style="width:15%;">عملیات</th>
                 </tr>
             </thead>
             <tbody>
-                <tr>
-                    <td colspan="5" style="text-align:center;">داده‌ای برای نمایش وجود ندارد.</td>
-                </tr>
+                <?php if ( ! empty( $invoices_list ) ) : ?>
+                    <?php foreach ( $invoices_list as $invoice ) : ?>
+                        <tr>
+                            <td><strong>#<?php echo esc_html( $invoice->id ); ?></strong></td>
+                            <td><?php echo esc_html( $invoice->customer_name ); ?></td>
+                            <td><?php echo number_format( $invoice->total_amount, 2 ); ?> تومان</td>
+                            <td>
+                                <?php
+                                // TODO: Convert to Jalali date
+                                echo esc_html( date( 'Y-m-d', strtotime( $invoice->invoice_date ) ) );
+                                ?>
+                            </td>
+                            <td><span class="badge badge-<?php echo esc_attr( $invoice->status ); ?>"><?php echo esc_html( $invoice->status ); ?></span></td>
+                            <td>
+                                <a href="#">مشاهده</a> |
+                                <a href="#" style="color: #a00;">حذف</a>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else : ?>
+                    <tr>
+                        <td colspan="6" style="text-align:center;">هیچ فاکتوری یافت نشد.</td>
+                    </tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>
