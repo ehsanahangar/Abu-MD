@@ -113,6 +113,15 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
     <div class="wrap">
         <h1>مشاهده فاکتور #<?php echo chap_hesab_to_persian_digits($invoice->id); ?> <a href="#" class="page-title-action" onclick="window.print(); return false;">چاپ</a></h1>
 
+        <?php
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'payment_success' ) {
+            echo '<div class="notice notice-success is-dismissible"><p>پرداخت با موفقیت ثبت شد.</p></div>';
+        }
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'payment_error' ) {
+            echo '<div class="notice notice-error is-dismissible"><p>خطا در ثبت پرداخت. لطفاً مبلغ معتبر وارد کنید.</p></div>';
+        }
+        ?>
+
         <div id="invoice-wrapper">
             <div class="invoice-top">
                 <table cellpadding="0" cellspacing="0">
@@ -175,6 +184,56 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
                 <p><i><?php echo esc_html($random_quote); ?></i></p>
             </div>
         </div>
+
+        <div id="payment-wrapper" style="margin-top: 40px;">
+            <div class="postbox">
+                <h2 class="hndle"><span>وضعیت پرداخت</span></h2>
+                <div class="inside">
+                    <p><strong>مبلغ کل:</strong> <?php echo chap_hesab_to_persian_digits(number_format($invoice->total_amount, 0)); ?> تومان</p>
+                    <p><strong>پرداخت شده:</strong> <?php echo chap_hesab_to_persian_digits(number_format($invoice->amount_paid, 0)); ?> تومان</p>
+                    <p><strong>مانده:</strong> <?php echo chap_hesab_to_persian_digits(number_format($invoice->total_amount - $invoice->amount_paid, 0)); ?> تومان</p>
+                    <hr>
+                    <?php if ( ($invoice->total_amount - $invoice->amount_paid) > 0) : ?>
+                    <h3>ثبت پرداخت جدید</h3>
+                    <form method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
+                        <input type="hidden" name="action" value="chap_hesab_add_payment">
+                        <input type="hidden" name="invoice_id" value="<?php echo esc_attr($invoice_id); ?>">
+                        <?php wp_nonce_field( 'chap_hesab_add_payment_nonce' ); ?>
+
+                        <table class="form-table">
+                            <tr>
+                                <th><label for="payment_amount">مبلغ پرداخت</label></th>
+                                <td><input type="number" id="payment_amount" name="payment_amount" class="regular-text" required> تومان</td>
+                            </tr>
+                            <tr>
+                                <th><label for="payment_date">تاریخ پرداخت</label></th>
+                                <td><input type="date" id="payment_date" name="payment_date" class="regular-text" value="<?php echo date('Y-m-d'); ?>" required></td>
+                            </tr>
+                             <tr>
+                                <th><label for="payment_method">روش پرداخت</label></th>
+                                <td>
+                                    <select id="payment_method" name="payment_method">
+                                        <option value="نقدی">نقدی</option>
+                                        <option value="کارت‌خوان">کارت‌خوان</option>
+                                        <option value="چک">چک</option>
+                                        <option value="انتقال بانکی">انتقال بانکی</option>
+                                    </select>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th><label for="payment_notes">یادداشت (شماره چک و...)</label></th>
+                                <td><textarea id="payment_notes" name="payment_notes" rows="3" class="large-text"></textarea></td>
+                            </tr>
+                        </table>
+                        <?php submit_button('ثبت پرداخت'); ?>
+                    </form>
+                    <?php else: ?>
+                    <p><strong>این فاکتور به طور کامل پرداخت شده است.</strong></p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
     </div>
     <?php
 }
@@ -581,7 +640,8 @@ function chap_hesab_plugin_activate() {
         id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
         customer_id bigint(20) unsigned NOT NULL,
         total_amount decimal(19, 2) NOT NULL,
-        status varchar(20) NOT NULL,
+        amount_paid decimal(19, 2) NOT NULL DEFAULT 0.00,
+        status varchar(20) NOT NULL DEFAULT 'unpaid',
         invoice_date datetime NOT NULL,
         created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
         PRIMARY KEY  (id),
@@ -601,6 +661,21 @@ function chap_hesab_plugin_activate() {
         KEY invoice_id (invoice_id)
     ) $charset_collate;";
     dbDelta( $sql_invoice_items );
+
+    // Table for payments
+    $payments_table_name = $wpdb->prefix . 'chap_hesab_payments';
+    $sql_payments = "CREATE TABLE $payments_table_name (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        invoice_id bigint(20) unsigned NOT NULL,
+        amount decimal(19, 2) NOT NULL,
+        payment_method varchar(50) NOT NULL,
+        payment_date datetime NOT NULL,
+        notes text,
+        created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        PRIMARY KEY  (id),
+        KEY invoice_id (invoice_id)
+    ) $charset_collate;";
+    dbDelta( $sql_payments );
 }
 register_activation_hook( __FILE__, 'chap_hesab_plugin_activate' );
 
@@ -673,10 +748,10 @@ function chap_hesab_save_invoice_handler() {
     $invoice_data = [
         'customer_id'  => $customer_id,
         'total_amount' => $total_amount,
-        'status'       => 'draft', // Default status
         'invoice_date' => current_time( 'mysql' ),
+        // status and amount_paid will use their DB defaults ('unpaid', 0.00)
     ];
-    $wpdb->insert( $invoices_table, $invoice_data, [ '%d', '%f', '%s', '%s' ] );
+    $wpdb->insert( $invoices_table, $invoice_data, [ '%d', '%f', '%s' ] );
     $invoice_id = $wpdb->insert_id;
 
     if ( $invoice_id ) {
@@ -702,3 +777,69 @@ function chap_hesab_save_invoice_handler() {
     exit;
 }
 add_action( 'admin_post_chap_hesab_save_invoice', 'chap_hesab_save_invoice_handler' );
+
+/**
+ * Handles the submission of the add payment form.
+ */
+function chap_hesab_add_payment_handler() {
+    // Security checks
+    if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'chap_hesab_add_payment_nonce' ) ) {
+        wp_die( 'Nonce verification failed!' );
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'You do not have permission to perform this action.' );
+    }
+
+    global $wpdb;
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+
+    // Sanitize data
+    $invoice_id     = isset( $_POST['invoice_id'] ) ? intval( $_POST['invoice_id'] ) : 0;
+    $amount         = isset( $_POST['payment_amount'] ) ? floatval( $_POST['payment_amount'] ) : 0;
+    $payment_date   = isset( $_POST['payment_date'] ) ? sanitize_text_field( $_POST['payment_date'] ) : current_time( 'Y-m-d' );
+    $payment_method = isset( $_POST['payment_method'] ) ? sanitize_text_field( $_POST['payment_method'] ) : '';
+    $notes          = isset( $_POST['payment_notes'] ) ? sanitize_textarea_field( $_POST['payment_notes'] ) : '';
+
+    $redirect_url = admin_url( 'admin.php?page=chap-hesab-invoices&action=view&id=' . $invoice_id );
+
+    if ( $invoice_id <= 0 || $amount <= 0 ) {
+        wp_redirect( $redirect_url . '&message=payment_error' );
+        exit;
+    }
+
+    // Insert payment record
+    $wpdb->insert(
+        $payments_table,
+        [
+            'invoice_id'     => $invoice_id,
+            'amount'         => $amount,
+            'payment_date'   => $payment_date,
+            'payment_method' => $payment_method,
+            'notes'          => $notes,
+        ],
+        [ '%d', '%f', '%s', '%s', '%s' ]
+    );
+
+    // Update the invoice amount_paid and status
+    $invoice = $wpdb->get_row( $wpdb->prepare( "SELECT total_amount, amount_paid FROM %i WHERE id = %d", $invoices_table, $invoice_id ) );
+    $new_amount_paid = $invoice->amount_paid + $amount;
+
+    $new_status = 'partially-paid';
+    if ( $new_amount_paid >= $invoice->total_amount ) {
+        $new_status = 'paid';
+        $new_amount_paid = $invoice->total_amount; // Prevent overpaying
+    }
+
+    $wpdb->update(
+        $invoices_table,
+        [ 'amount_paid' => $new_amount_paid, 'status' => $new_status ],
+        [ 'id' => $invoice_id ],
+        [ '%f', '%s' ],
+        [ '%d' ]
+    );
+
+    wp_redirect( $redirect_url . '&message=payment_success' );
+    exit;
+}
+add_action( 'admin_post_chap_hesab_add_payment', 'chap_hesab_add_payment_handler' );
