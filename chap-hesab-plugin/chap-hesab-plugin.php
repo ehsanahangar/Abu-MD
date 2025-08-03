@@ -245,6 +245,30 @@ function chap_hesab_register_api_routes() {
         'callback' => 'chap_hesab_api_create_invoice',
         'permission_callback' => 'chap_hesab_api_permission_check',
     ) );
+
+    // Check Routes
+    register_rest_route( $namespace, '/checks', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_checks',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/checks', array(
+        'methods' => 'POST',
+        'callback' => 'chap_hesab_api_create_check',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/checks/(?P<id>\d+)', array(
+        'methods' => 'PUT',
+        'callback' => 'chap_hesab_api_update_check_status',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+
+    // Reports Route
+    register_rest_route( $namespace, '/reports/customer/(?P<id>\d+)', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_customer_report',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
 }
 add_action( 'rest_api_init', 'chap_hesab_register_api_routes' );
 
@@ -405,6 +429,108 @@ function chap_hesab_api_create_invoice( WP_REST_Request $request ) {
     }
 
     return new WP_REST_Response( ['id' => $invoice_id, 'message' => 'فاکتور با موفقیت ایجاد شد.'], 201 );
+}
+
+function chap_hesab_api_get_checks() {
+    global $wpdb;
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+
+    $results = $wpdb->get_results( $wpdb->prepare(
+        "SELECT p.id, p.amount, p.due_date, p.check_status, p.notes, c.name as customer_name, p.invoice_id
+         FROM %i AS p
+         LEFT JOIN %i AS i ON p.invoice_id = i.id
+         LEFT JOIN %i AS c ON i.customer_id = c.id
+         WHERE p.payment_method = %s
+         ORDER BY p.due_date ASC",
+        $payments_table, $invoices_table, $customers_table, 'چک'
+    ) );
+    return new WP_REST_Response( $results, 200 );
+}
+
+function chap_hesab_api_create_check( WP_REST_Request $request ) {
+    global $wpdb;
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+    $params = $request->get_json_params();
+
+    $invoice_id = intval($params['invoice_id']);
+    $amount = floatval($params['amount']);
+    $due_date = sanitize_text_field($params['due_date']);
+    $notes = sanitize_text_field($params['notes']);
+
+    if ( empty($invoice_id) || empty($amount) || empty($due_date) ) {
+        return new WP_Error( 'bad_request', 'اطلاعات چک ناقص است.', array( 'status' => 400 ) );
+    }
+
+    $wpdb->insert( $payments_table, [
+        'invoice_id' => $invoice_id,
+        'amount' => $amount,
+        'payment_date' => current_time('mysql'),
+        'payment_method' => 'چک',
+        'due_date' => $due_date,
+        'notes' => $notes,
+        'check_status' => 'pending'
+    ], [ '%d', '%f', '%s', '%s', '%s', '%s', '%s' ] );
+
+    $new_id = $wpdb->insert_id;
+    return new WP_REST_Response( ['id' => $new_id, 'message' => 'چک با موفقیت ثبت شد.'], 201 );
+}
+
+function chap_hesab_api_update_check_status( WP_REST_Request $request ) {
+    global $wpdb;
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+    $payment_id = intval( $request['id'] );
+    $params = $request->get_json_params();
+    $new_status = sanitize_text_field( $params['status'] );
+
+    if ( ! in_array( $new_status, ['pending', 'cleared', 'bounced'] ) ) {
+        return new WP_Error( 'bad_request', 'وضعیت چک نامعتبر است.', array( 'status' => 400 ) );
+    }
+
+    // This logic is simplified for the API. The more complex logic from the admin handler can be added if needed.
+    $wpdb->update( $payments_table, ['check_status' => $new_status], ['id' => $payment_id] );
+
+    return new WP_REST_Response( ['message' => 'وضعیت چک به‌روزرسانی شد.'], 200 );
+}
+
+function chap_hesab_api_get_customer_report( WP_REST_Request $request ) {
+    global $wpdb;
+    $customer_id = intval( $request['id'] );
+
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+
+    $customer = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $customers_table WHERE id = %d", $customer_id ) );
+    if ( ! $customer ) {
+        return new WP_Error( 'not_found', 'مشتری یافت نشد.', array( 'status' => 404 ) );
+    }
+
+    $customer_invoices = $wpdb->get_results( $wpdb->prepare("SELECT id, invoice_date as date, total_amount FROM $invoices_table WHERE customer_id = %d", $customer_id) );
+    // Only include non-check and cleared check payments in the report
+    $customer_payments = $wpdb->get_results( $wpdb->prepare("SELECT p.payment_date as date, p.amount, p.notes, p.payment_method FROM %i p JOIN %i i ON p.invoice_id = i.id WHERE i.customer_id = %d AND (p.payment_method != 'چک' OR p.check_status = 'cleared')", $payments_table, $invoices_table, $customer_id) );
+
+    $transactions = [];
+    foreach ($customer_invoices as $invoice) {
+        $transactions[] = ['date' => $invoice->date, 'type' => 'invoice', 'description' => 'فاکتور شماره ' . $invoice->id, 'debit' => $invoice->total_amount, 'credit' => 0];
+    }
+    foreach ($customer_payments as $payment) {
+        $description = 'پرداخت' . ($payment->payment_method ? ' (' . $payment->payment_method . ')' : '') . ($payment->notes ? ' - ' . $payment->notes : '');
+        $transactions[] = ['date' => $payment->date, 'type' => 'payment', 'description' => $description, 'debit' => 0, 'credit' => $payment->amount];
+    }
+
+    // Sort transactions by date
+    usort($transactions, function($a, $b) {
+        return strtotime($a['date']) - strtotime($b['date']);
+    });
+
+    $report = [
+        'customer' => $customer,
+        'transactions' => $transactions,
+    ];
+
+    return new WP_REST_Response( $report, 200 );
 }
 
 /**
@@ -1428,20 +1554,27 @@ add_action( 'admin_post_chap_hesab_update_check_status', 'chap_hesab_update_chec
 function chap_hesab_enqueue_frontend_assets() {
     global $post;
     if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'chap_hesab_app' ) ) {
+        // Enqueue Fonts & Icons
+        wp_enqueue_style( 'vazirmatn-font', 'https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css' );
+        wp_enqueue_style( 'bootstrap-icons', 'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css' );
+
         // Enqueue Bootstrap CSS
         wp_enqueue_style( 'bootstrap-css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' );
         // Enqueue custom app CSS
-        wp_enqueue_style( 'chap-hesab-app-css', plugin_dir_url( __FILE__ ) . 'assets/css/app.css' );
+        wp_enqueue_style( 'chap-hesab-app-css', plugin_dir_url( __FILE__ ) . 'assets/css/app.css', array(), '1.0.1' );
 
         // Enqueue Bootstrap JS
         wp_enqueue_script( 'bootstrap-js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js', array(), '5.3.0', true );
+        // Enqueue JsBarcode for barcode generation
+        wp_enqueue_script( 'jsbarcode', 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js', array(), '3.11.5', true );
         // Enqueue custom app JS
-        wp_enqueue_script( 'chap-hesab-app-js', plugin_dir_url( __FILE__ ) . 'assets/js/app.js', array( 'jquery', 'bootstrap-js' ), '1.0.0', true );
+        wp_enqueue_script( 'chap-hesab-app-js', plugin_dir_url( __FILE__ ) . 'assets/js/app.js', array( 'jquery', 'bootstrap-js', 'jsbarcode' ), '1.0.2', true );
 
         // Pass data to our script
         wp_localize_script( 'chap-hesab-app-js', 'chapHesabData', array(
-            'api_url' => esc_url_raw( rest_url( 'chap-hesab/v1/' ) ),
-            'nonce'   => wp_create_nonce( 'wp_rest' )
+            'api_url'   => esc_url_raw( rest_url( 'chap-hesab/v1/' ) ),
+            'nonce'     => wp_create_nonce( 'wp_rest' ),
+            'admin_url' => admin_url( 'admin.php' ),
         ) );
     }
 }

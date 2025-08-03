@@ -1,8 +1,37 @@
 /* Custom styles for the front-end application will go here. */
+body {
+    font-family: 'Vazirmatn', sans-serif;
+}
+
+#chap-hesab-app-container {
+    direction: rtl;
+    text-align: right;
+}
+
+.nav-pills .nav-link {
+    font-size: 1.1rem;
+    margin: 0 5px;
+}
+
+.nav-pills .nav-link.active {
+    background-color: #0d6efd;
+    color: #fff;
+}
+
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+}
+
+.btn i {
+    margin-left: 5px;
+}
+
 
 @media print {
     body, #chap-hesab-app-container {
         background: #fff;
+        font-family: 'Vazirmatn', sans-serif;
     }
     .card-header .btn, .nav-pills {
         display: none !important;

@@ -1,19 +1,31 @@
+# پلاگین حسابداری چاپ و بسته بندی (Chap Hesab)
 
-## HOW TO USE
+این یک پلاگین سفارشی حسابداری برای وردپرس است که برای کسب‌وکارهای حوزه چاپ، کارتن‌سازی و جعبه‌سازی طراحی شده است. این پلاگین به صورت یک اپلیکیشن مدرن (Single-Page Application) عمل می‌کند که می‌توانید آن را در هر برگه‌ای از سایت خود قرار دهید.
 
-## > <b><s1>1.ғɪʀsᴛ ғʀᴏᴋ ɢɪᴛʜᴜʙ</b></s1> 
-## <a href='https://github.com/Afx-Abu/Abu-MD/fork/' target="_blank"><img alt='FORK GIT' src='https://img.shields.io/badge/Frok_Github-100000?style=for-the-badge&logo=scan&logoColor=white&labelColor=black&color=black'/></a>
+## ویژگی‌های کلیدی
 
-## > <b><s1>2.sᴄᴀɴ ǫʀ ᴄᴏᴅᴇ ᴏʀ ᴘᴀɪʀɪɴɢ ᴄᴏᴅᴇ</b></s1> 
-## <a href='https://api-afx-abuba7cww6xna.koyeb.app/viwe/getqr' target="_blank"><img alt='QR CODE' src='https://img.shields.io/badge/Scan_qr_code-100000?style=for-the-badge&logo=scan&logoColor=white&labelColor=black&color=black'/></a>
+- **مدیریت مشتریان:** افزودن، ویرایش و مشاهده لیست مشتریان.
+- **مدیریت محصولات:** تعریف محصولات یا خدمات به همراه قیمت.
+- **صدور فاکتور:** فرآیند آسان و چندمرحله‌ای برای صدور فاکتور.
+- **نمایش و چاپ فاکتور:** مشاهده جزئیات کامل فاکتور به همراه بارکد و QR کد و ارائه نسخه چاپی تمیز.
+- **مدیریت چک‌ها:** ثبت چک‌های دریافتی و مدیریت وضعیت آن‌ها (در انتظار، پاس شده، برگشتی).
+- **گزارش‌گیری پیشرفته:** ارائه گزارش کاردکس کامل برای هر مشتری (ریز حساب فاکتورها و پرداخت‌ها).
+- **اشتراک‌گذاری:** قابلیت اشتراک‌گذاری آسان فاکتور از طریق واتس‌اپ، تلگرام و ایمیل.
+- **طراحی مدرن:** رابط کاربری زیبا، واکنش‌گرا و کاربرپسند با فونت و آیکون‌های مناسب.
 
-## > <b><s1>3.ɪғ ʏᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ᴀ ᴀᴄᴄᴏᴜɴᴛ ɪɴ ʜᴇʀᴏᴋᴜ. ᴄʀᴇᴀᴛᴇ ᴀ ᴀᴄᴄᴏᴜɴᴛ. </b></s1> 
-<a href='https://signup.heroku.com/' 
-target="_blank"><img alt='Heroku' src='https://img.shields.io/badge/-Create-black?style=for-the-badge&logo=heroku&logoColor=white'/></a>
+## نحوه استفاده
 
-## ><b><s1>4.ɴᴏᴡ ᴅᴇᴘʟᴏʏ ᴏɴ ᴅᴇᴘʟᴏʏ </b></s1>
- <a href='https://dashboard.heroku.com/new?button-url=https://github.com/Afx-Abu/Afx-Abu&template=https://github.com/Afx-Abu/Abu-MD.git' target="_blank"><img alt='DEPLOY' src='https://img.shields.io/badge/-DEPLOY-black?style=for-the-badge&logo=heroku&logoColor=white'/></a>
+1.  پلاگین را در سایت وردپرسی خود نصب و فعال کنید.
+2.  به بخش "برگه‌ها" در پیشخوان وردپرس بروید و یک برگه جدید ایجاد کنید (مثلاً با نام "پنل حسابداری").
+3.  در ویرایشگر برگه، شورت‌کد زیر را در هر قسمتی از محتوای برگه قرار دهید:
 
-[![CONTACT CREATER](https://img.shields.io/badge/Contact%20Owner-25D366?style=for-the-badge&logo=whatsapp&logoColor=white)](wa.me/917025994178) 
----------
+    ```
+    [chap_hesab_app]
+    ```
 
+4.  برگه را ذخیره و منتشر کنید.
+
+اکنون با مراجعه به آن برگه در سایت خود، اپلیکیشن حسابداری را مشاهده خواهید کرد. توجه داشته باشید که این اپلیکیشن **فقط برای مدیران سایت** که وارد حساب کاربری خود شده‌اند، قابل مشاهده است.
+
+---
+ساخته شده توسط جولز (Jules) - دستیار هوشمند توسعه نرم‌افزار.
