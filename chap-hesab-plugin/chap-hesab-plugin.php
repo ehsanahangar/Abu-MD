@@ -28,15 +28,111 @@ function chap_hesab_add_admin_menu() {
 
     // Add sub-menu page for Products
     add_submenu_page(
-        'chap-hesab-main',            // Parent slug
-        'مدیریت محصولات',             // Page title
-        'محصولات',                    // Menu title
-        'manage_options',             // Capability
-        'chap-hesab-products',        // Menu slug
-        'chap_hesab_products_page_html' // Callback function
+        'chap-hesab-main',
+        'مدیریت محصولات',
+        'محصولات',
+        'manage_options',
+        'chap-hesab-products',
+        'chap_hesab_products_page_html'
+    );
+
+    // Add sub-menu page for Invoices List
+    add_submenu_page(
+        'chap-hesab-main',
+        'لیست فاکتورها',
+        'فاکتورها',
+        'manage_options',
+        'chap-hesab-invoices',
+        'chap_hesab_invoices_list_page_html'
+    );
+
+    // Add sub-menu page for adding a new Invoice
+    add_submenu_page(
+        'chap-hesab-main',
+        'صدور فاکتور جدید',
+        'صدور فاکتور',
+        'manage_options',
+        'chap-hesab-invoice-new',
+        'chap_hesab_invoice_new_page_html'
     );
 }
 add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
+
+/**
+ * Renders the HTML for the Invoices List page.
+ */
+function chap_hesab_invoices_list_page_html() {
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+    ?>
+    <div class="wrap">
+        <h1>لیست فاکتورها</h1>
+        <p>لیست تمام فاکتورهای صادر شده در اینجا نمایش داده خواهد شد.</p>
+    </div>
+    <?php
+}
+
+/**
+ * Renders the HTML for the Add New Invoice page.
+ * This will be a multi-step process. Step 1 is choosing the customer.
+ */
+function chap_hesab_invoice_new_page_html() {
+    global $wpdb;
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+
+    $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
+    $step = isset( $_GET['step'] ) ? intval( $_GET['step'] ) : 1;
+    $customer_id = isset( $_GET['customer_id'] ) ? intval( $_GET['customer_id'] ) : 0;
+
+    ?>
+    <div class="wrap">
+        <h1>صدور فاکتور جدید</h1>
+        <?php if ( $step === 1 ) : ?>
+            <h2>مرحله ۱: انتخاب مشتری</h2>
+            <?php
+            $customers = $wpdb->get_results( "SELECT id, name FROM {$customers_table_name} ORDER BY name ASC" );
+            if ( empty( $customers ) ) {
+                echo '<div class="notice notice-warning"><p>هیچ مشتری ثبت نشده است. لطفاً ابتدا از <a href="?page=chap-hesab-main">صفحه اصلی</a> یک مشتری اضافه کنید.</p></div>';
+                return;
+            }
+            ?>
+            <form method="get" action="">
+                <input type="hidden" name="page" value="chap-hesab-invoice-new" />
+                <input type="hidden" name="step" value="2" />
+                <table class="form-table">
+                    <tbody>
+                        <tr>
+                            <th scope="row"><label for="customer_id">انتخاب مشتری</label></th>
+                            <td>
+                                <select name="customer_id" id="customer_id" required>
+                                    <option value="">یک مشتری را انتخاب کنید...</option>
+                                    <?php foreach ( $customers as $customer ) : ?>
+                                        <option value="<?php echo esc_attr( $customer->id ); ?>"><?php echo esc_html( $customer->name ); ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+                <?php submit_button( 'مرحله بعد (افزودن اقلام)' ); ?>
+            </form>
+
+        <?php elseif ( $step === 2 && $customer_id > 0 ) : ?>
+            <h2>مرحله ۲: افزودن اقلام به فاکتور</h2>
+            <p><strong>مشتری:</strong> <?php echo esc_html( $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$customers_table_name} WHERE id = %d", $customer_id ) ) ); ?></p>
+            <p>بخش افزودن محصولات به فاکتور در مرحله بعدی پیاده‌سازی خواهد شد.</p>
+            <a href="?page=chap-hesab-invoice-new" class="button">&larr; بازگشت به انتخاب مشتری</a>
+
+        <?php else: ?>
+             <p>مرحله نامعتبر است. لطفاً از اول شروع کنید.</p>
+             <a href="?page=chap-hesab-invoice-new" class="button">شروع مجدد</a>
+        <?php endif; ?>
+    </div>
+    <?php
+}
 
 /**
  * Renders the HTML for the products management page (form and list).
@@ -233,7 +329,7 @@ function chap_hesab_main_page_html() {
 }
 
 /**
- * Runs only when the plugin is activated to create necessary database tables.
+ * Runs only when the plugin is activated to create all necessary database tables.
  */
 function chap_hesab_plugin_activate() {
     global $wpdb;
@@ -243,7 +339,7 @@ function chap_hesab_plugin_activate() {
     // Table for customers
     $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
     $sql_customers = "CREATE TABLE $customers_table_name (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
         name varchar(255) NOT NULL,
         phone varchar(20) DEFAULT '' NOT NULL,
         email varchar(100) DEFAULT '' NOT NULL,
@@ -256,13 +352,40 @@ function chap_hesab_plugin_activate() {
     // Table for products
     $products_table_name = $wpdb->prefix . 'chap_hesab_products';
     $sql_products = "CREATE TABLE $products_table_name (
-        id mediumint(9) NOT NULL AUTO_INCREMENT,
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
         name varchar(255) NOT NULL,
         description text,
-        price decimal(10, 2) DEFAULT 0.00 NOT NULL,
+        price decimal(19, 2) DEFAULT 0.00 NOT NULL,
         created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
         PRIMARY KEY  (id)
     ) $charset_collate;";
     dbDelta( $sql_products );
+
+    // Table for invoices
+    $invoices_table_name = $wpdb->prefix . 'chap_hesab_invoices';
+    $sql_invoices = "CREATE TABLE $invoices_table_name (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        customer_id bigint(20) unsigned NOT NULL,
+        total_amount decimal(19, 2) NOT NULL,
+        status varchar(20) NOT NULL,
+        invoice_date datetime NOT NULL,
+        created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        PRIMARY KEY  (id),
+        KEY customer_id (customer_id)
+    ) $charset_collate;";
+    dbDelta( $sql_invoices );
+
+    // Table for invoice items
+    $invoice_items_table_name = $wpdb->prefix . 'chap_hesab_invoice_items';
+    $sql_invoice_items = "CREATE TABLE $invoice_items_table_name (
+        id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+        invoice_id bigint(20) unsigned NOT NULL,
+        product_id bigint(20) unsigned NOT NULL,
+        quantity int(11) NOT NULL,
+        price decimal(19, 2) NOT NULL,
+        PRIMARY KEY  (id),
+        KEY invoice_id (invoice_id)
+    ) $charset_collate;";
+    dbDelta( $sql_invoice_items );
 }
 register_activation_hook( __FILE__, 'chap_hesab_plugin_activate' );
