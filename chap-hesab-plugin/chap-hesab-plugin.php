@@ -67,8 +67,36 @@ function chap_hesab_invoices_list_page_html() {
     }
     ?>
     <div class="wrap">
-        <h1>لیست فاکتورها</h1>
-        <p>لیست تمام فاکتورهای صادر شده در اینجا نمایش داده خواهد شد.</p>
+        <h1>لیست فاکتورها <a href="<?php echo admin_url('admin.php?page=chap-hesab-invoice-new'); ?>" class="page-title-action">صدور فاکتور جدید</a></h1>
+
+        <?php
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'success' ) {
+            echo '<div class="notice notice-success is-dismissible"><p>فاکتور جدید با موفقیت ذخیره شد.</p></div>';
+        }
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'error' ) {
+            echo '<div class="notice notice-error is-dismissible"><p>خطایی در پردازش درخواست رخ داد.</p></div>';
+        }
+        ?>
+
+        <p>در مرحله بعدی، این لیست با اطلاعات واقعی فاکتورها پر خواهد شد.</p>
+
+        <!-- Placeholder for the invoice list table -->
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th style="width:10%;">ID فاکتور</th>
+                    <th>مشتری</th>
+                    <th>مبلغ کل</th>
+                    <th>تاریخ صدور</th>
+                    <th style="width:15%;">وضعیت</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td colspan="5" style="text-align:center;">داده‌ای برای نمایش وجود ندارد.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
     <?php
 }
@@ -84,6 +112,7 @@ function chap_hesab_invoice_new_page_html() {
     }
 
     $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
+    $products_table_name = $wpdb->prefix . 'chap_hesab_products';
     $step = isset( $_GET['step'] ) ? intval( $_GET['step'] ) : 1;
     $customer_id = isset( $_GET['customer_id'] ) ? intval( $_GET['customer_id'] ) : 0;
 
@@ -107,7 +136,7 @@ function chap_hesab_invoice_new_page_html() {
                         <tr>
                             <th scope="row"><label for="customer_id">انتخاب مشتری</label></th>
                             <td>
-                                <select name="customer_id" id="customer_id" required>
+                                <select name="customer_id" id="customer_id" class="wc-customer-search" required>
                                     <option value="">یک مشتری را انتخاب کنید...</option>
                                     <?php foreach ( $customers as $customer ) : ?>
                                         <option value="<?php echo esc_attr( $customer->id ); ?>"><?php echo esc_html( $customer->name ); ?></option>
@@ -120,12 +149,57 @@ function chap_hesab_invoice_new_page_html() {
                 <?php submit_button( 'مرحله بعد (افزودن اقلام)' ); ?>
             </form>
 
-        <?php elseif ( $step === 2 && $customer_id > 0 ) : ?>
-            <h2>مرحله ۲: افزودن اقلام به فاکتور</h2>
-            <p><strong>مشتری:</strong> <?php echo esc_html( $wpdb->get_var( $wpdb->prepare( "SELECT name FROM {$customers_table_name} WHERE id = %d", $customer_id ) ) ); ?></p>
-            <p>بخش افزودن محصولات به فاکتور در مرحله بعدی پیاده‌سازی خواهد شد.</p>
-            <a href="?page=chap-hesab-invoice-new" class="button">&larr; بازگشت به انتخاب مشتری</a>
+        <?php elseif ( $step === 2 && $customer_id > 0 ) :
+            $customer = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$customers_table_name} WHERE id = %d", $customer_id ) );
+            $products = $wpdb->get_results( "SELECT id, name, price FROM {$products_table_name} ORDER BY name ASC" );
+            ?>
+            <form id="invoice-form" method="post" action="<?php echo esc_url( admin_url('admin-post.php') ); ?>">
+                <input type="hidden" name="action" value="chap_hesab_save_invoice" />
+                <input type="hidden" name="customer_id" value="<?php echo esc_attr( $customer_id ); ?>" />
+                <?php wp_nonce_field( 'chap_hesab_save_invoice_nonce' ); ?>
 
+                <h2>مرحله ۲: افزودن اقلام برای مشتری: <?php echo esc_html( $customer->name ); ?></h2>
+
+                <div id="invoice-items-wrapper">
+                    <table class="wp-list-table widefat fixed striped" id="invoice-items-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 40%;">محصول</th>
+                                <th style="width: 15%;">تعداد</th>
+                                <th style="width: 20%;">قیمت واحد</th>
+                                <th style="width: 20%;">جمع کل</th>
+                                <th style="width: 5%;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="invoice-items-body">
+                            <!-- Rows will be added here by JavaScript -->
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3" style="text-align:left;">جمع کل فاکتور:</th>
+                                <td id="invoice-grand-total">۰ تومان</td>
+                                <td></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <div id="add-item-wrapper" style="margin-top: 20px;">
+                    <select id="product-select" style="width: 300px;">
+                        <option value="">-- یک محصول را انتخاب کنید --</option>
+                        <?php foreach ( $products as $product ) : ?>
+                            <option value="<?php echo esc_attr( $product->id ); ?>" data-price="<?php echo esc_attr( $product->price ); ?>"><?php echo esc_html( $product->name ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <input type="number" id="item-quantity" value="1" min="1" style="width: 80px;" />
+                    <button type="button" class="button" id="add-invoice-item-btn">افزودن به فاکتور</button>
+                </div>
+
+                <p class="submit" style="margin-top: 20px;">
+                    <input type="submit" name="save_invoice" id="save_invoice" class="button button-primary button-large" value="ذخیره فاکتور">
+                    <a href="?page=chap-hesab-invoice-new" class="button" style="margin-right: 10px;">&larr; بازگشت به انتخاب مشتری</a>
+                </p>
+            </form>
         <?php else: ?>
              <p>مرحله نامعتبر است. لطفاً از اول شروع کنید.</p>
              <a href="?page=chap-hesab-invoice-new" class="button">شروع مجدد</a>
@@ -389,3 +463,102 @@ function chap_hesab_plugin_activate() {
     dbDelta( $sql_invoice_items );
 }
 register_activation_hook( __FILE__, 'chap_hesab_plugin_activate' );
+
+/**
+ * Enqueues the necessary admin scripts.
+ */
+function chap_hesab_load_admin_scripts( $hook ) {
+    // Only load the script on our plugin's 'add new invoice' page
+    if ( 'toplevel_page_chap-hesab-main' !== $hook && 'حسابداری-چاپ_page_chap-hesab-invoice-new' !== $hook && strpos($hook, 'chap-hesab-invoice-new') === false) {
+        // A more robust check might be needed if the hook name is complex
+        if(!isset($_GET['page']) || $_GET['page'] !== 'chap-hesab-invoice-new') {
+            return;
+        }
+    }
+
+    wp_enqueue_script(
+        'chap-hesab-invoice-script',
+        plugin_dir_url( __FILE__ ) . 'assets/js/invoice.js',
+        array( 'jquery' ),
+        '1.0.0',
+        true
+    );
+}
+add_action( 'admin_enqueue_scripts', 'chap_hesab_load_admin_scripts' );
+
+/**
+ * Handles the submission of the new invoice form.
+ */
+function chap_hesab_save_invoice_handler() {
+    // Security checks
+    if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'chap_hesab_save_invoice_nonce' ) ) {
+        wp_die( 'Nonce verification failed!' );
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'You do not have permission to perform this action.' );
+    }
+
+    global $wpdb;
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $invoice_items_table = $wpdb->prefix . 'chap_hesab_invoice_items';
+
+    // Sanitize and validate data
+    $customer_id = isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : 0;
+    $invoice_items = isset( $_POST['invoice_items'] ) ? $_POST['invoice_items'] : array();
+
+    if ( empty( $customer_id ) || empty( $invoice_items ) || empty( $invoice_items['product_id'] ) ) {
+        wp_redirect( admin_url( 'admin.php?page=chap-hesab-invoice-new&message=error' ) );
+        exit;
+    }
+
+    // Server-side calculation of total
+    $total_amount = 0;
+    $items_to_insert = [];
+    for ( $i = 0; $i < count( $invoice_items['product_id'] ); $i++ ) {
+        $product_id = intval( $invoice_items['product_id'][ $i ] );
+        $quantity   = intval( $invoice_items['quantity'][ $i ] );
+        $price      = floatval( $invoice_items['price'][ $i ] );
+
+        if ($quantity > 0 && $price >= 0) {
+            $total_amount += $quantity * $price;
+            $items_to_insert[] = [
+                'product_id' => $product_id,
+                'quantity'   => $quantity,
+                'price'      => $price,
+            ];
+        }
+    }
+
+    // Insert main invoice record
+    $invoice_data = [
+        'customer_id'  => $customer_id,
+        'total_amount' => $total_amount,
+        'status'       => 'draft', // Default status
+        'invoice_date' => current_time( 'mysql' ),
+    ];
+    $wpdb->insert( $invoices_table, $invoice_data, [ '%d', '%f', '%s', '%s' ] );
+    $invoice_id = $wpdb->insert_id;
+
+    if ( $invoice_id ) {
+        // Insert invoice items
+        foreach ( $items_to_insert as $item ) {
+            $wpdb->insert(
+                $invoice_items_table,
+                [
+                    'invoice_id' => $invoice_id,
+                    'product_id' => $item['product_id'],
+                    'quantity'   => $item['quantity'],
+                    'price'      => $item['price'],
+                ],
+                [ '%d', '%d', '%d', '%f' ]
+            );
+        }
+        // Redirect on success
+        wp_redirect( admin_url( 'admin.php?page=chap-hesab-invoices&message=success' ) );
+    } else {
+        // Redirect on failure
+        wp_redirect( admin_url( 'admin.php?page=chap-hesab-invoice-new&message=error' ) );
+    }
+    exit;
+}
+add_action( 'admin_post_chap_hesab_save_invoice', 'chap_hesab_save_invoice_handler' );
