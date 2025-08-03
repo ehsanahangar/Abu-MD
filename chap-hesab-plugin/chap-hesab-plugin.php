@@ -340,7 +340,21 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
 function chap_hesab_render_invoices_table_page() {
     global $wpdb;
     $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $invoice_items_table = $wpdb->prefix . 'chap_hesab_invoice_items';
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
     $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+
+    // Handle Delete Action
+    if ( isset( $_GET['action'] ) && $_GET['action'] === 'delete' && isset( $_GET['id'] ) ) {
+        if ( isset( $_GET['_wpnonce'] ) && wp_verify_nonce( $_GET['_wpnonce'], 'chap_delete_invoice_' . $_GET['id'] ) ) {
+            $invoice_id_to_delete = intval($_GET['id']);
+            // Cascading delete
+            $wpdb->delete( $invoice_items_table, array( 'invoice_id' => $invoice_id_to_delete ) );
+            $wpdb->delete( $payments_table, array( 'invoice_id' => $invoice_id_to_delete ) );
+            $wpdb->delete( $invoices_table, array( 'id' => $invoice_id_to_delete ) );
+            echo '<div class="notice notice-success is-dismissible"><p>فاکتور و تمام داده‌های مرتبط با آن حذف شد.</p></div>';
+        }
+    }
 
     $invoices_list = $wpdb->get_results( $wpdb->prepare(
         "SELECT i.id, i.total_amount, i.status, i.invoice_date, c.name as customer_name
@@ -376,12 +390,12 @@ function chap_hesab_render_invoices_table_page() {
                         <tr>
                             <td><strong>#<?php echo esc_html( $invoice->id ); ?></strong></td>
                             <td><?php echo esc_html( $invoice->customer_name ); ?></td>
-                            <td><?php echo number_format( $invoice->total_amount, 2 ); ?> تومان</td>
+                            <td><?php echo number_format( $invoice->total_amount, 0 ); ?> تومان</td>
                             <td><?php echo esc_html( date( 'Y-m-d', strtotime( $invoice->invoice_date ) ) ); ?></td>
                             <td><span class="badge badge-<?php echo esc_attr( $invoice->status ); ?>"><?php echo esc_html( $invoice->status ); ?></span></td>
                             <td>
                                 <a href="?page=chap-hesab-invoices&action=view&id=<?php echo esc_attr( $invoice->id ); ?>">مشاهده</a> |
-                                <a href="#" style="color: #a00;">حذف</a>
+                                <a href="<?php echo wp_nonce_url( admin_url('admin.php?page=chap-hesab-invoices&action=delete&id=' . $invoice->id), 'chap_delete_invoice_' . $invoice->id); ?>" style="color: #a00;" onclick="return confirm('آیا از حذف این فاکتور مطمئن هستید؟ این عمل غیرقابل بازگشت است.')">حذف</a>
                             </td>
                         </tr>
                     <?php endforeach; ?>
@@ -507,97 +521,232 @@ function chap_hesab_invoice_new_page_html() {
  * Renders the HTML for the products management page (form and list).
  */
 function chap_hesab_products_page_html() {
+    // Router for edit/delete/list views
+    if ( isset( $_GET['action'] ) && $_GET['action'] === 'edit' && isset( $_GET['id'] ) ) {
+        chap_hesab_render_edit_product_page( intval( $_GET['id'] ) );
+    } else {
+        chap_hesab_render_products_list_page();
+    }
+}
+
+function chap_hesab_render_edit_product_page( $product_id ) {
+    global $wpdb;
+    $products_table_name = $wpdb->prefix . 'chap_hesab_products';
+    $product = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $products_table_name WHERE id = %d", $product_id ) );
+
+    if ( ! $product ) {
+        echo '<div class="wrap"><h1>محصول یافت نشد.</h1></div>';
+        return;
+    }
+    ?>
+    <div class="wrap">
+        <h1>ویرایش محصول</h1>
+        <form method="post" action="<?php echo admin_url( 'admin.php?page=chap-hesab-products' ); ?>">
+            <input type="hidden" name="product_id" value="<?php echo esc_attr( $product->id ); ?>" />
+            <?php wp_nonce_field( 'chap_add_edit_product_nonce' ); ?>
+            <table class="form-table">
+                <tr valign="top">
+                    <th scope="row"><label for="product_name">نام محصول</label></th>
+                    <td><input type="text" id="product_name" name="product_name" class="regular-text" value="<?php echo esc_attr( $product->name ); ?>" required/></td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="product_price">قیمت (تومان)</label></th>
+                    <td><input type="number" step="any" id="product_price" name="product_price" class="regular-text" value="<?php echo esc_attr( $product->price ); ?>" required/></td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="product_description">توضیحات</label></th>
+                    <td><textarea id="product_description" name="product_description" rows="4" class="large-text"><?php echo esc_textarea( $product->description ); ?></textarea></td>
+                </tr>
+            </table>
+            <?php submit_button( 'ذخیره تغییرات' ); ?>
+        </form>
+    </div>
+    <?php
+}
+
+function chap_hesab_render_products_list_page() {
     global $wpdb;
     $products_table_name = $wpdb->prefix . 'chap_hesab_products';
 
-    if ( ! current_user_can( 'manage_options' ) ) {
-        return;
-    }
-
-    // Handle form submission for adding a new product
-    if ( isset( $_POST['submit_product'] ) && check_admin_referer( 'chap_hesab_add_product_nonce' ) ) {
-        $name        = sanitize_text_field( $_POST['product_name'] );
-        $description = sanitize_textarea_field( $_POST['product_description'] );
-        $price       = preg_replace( '/[^0-9.]/', '', $_POST['product_price'] ); // Sanitize for decimal
-
-        if ( ! empty( $name ) && is_numeric( $price ) ) {
-            $result = $wpdb->insert(
-                $products_table_name,
-                [ 'name' => $name, 'description' => $description, 'price' => $price ],
-                [ '%s', '%s', '%f' ]
-            );
-            if ($result) {
-                echo '<div class="notice notice-success is-dismissible"><p>محصول جدید با موفقیت اضافه شد.</p></div>';
-            } else {
-                echo '<div class="notice notice-error is-dismissible"><p>خطایی در افزودن محصول رخ داد.</p></div>';
-            }
-        } else {
-            echo '<div class="notice notice-warning is-dismissible"><p>نام محصول و قیمت باید معتبر باشند.</p></div>';
+    // Handle Add/Edit/Delete Actions
+    if ( isset( $_POST['submit'] ) && check_admin_referer( 'chap_add_edit_product_nonce' ) ) {
+        $data = [
+            'name'        => sanitize_text_field( $_POST['product_name'] ),
+            'description' => sanitize_textarea_field( $_POST['product_description'] ),
+            'price'       => floatval( $_POST['product_price'] ),
+        ];
+        $product_id = isset( $_POST['product_id'] ) ? intval( $_POST['product_id'] ) : 0;
+        if ( $product_id > 0 ) {
+            $wpdb->update( $products_table_name, $data, ['id' => $product_id] );
+            echo '<div class="notice notice-success is-dismissible"><p>محصول با موفقیت به‌روزرسانی شد.</p></div>';
+        }
+    } elseif ( isset( $_GET['action'] ) && $_GET['action'] === 'delete' && isset( $_GET['id'] ) ) {
+        if ( isset( $_GET['_wpnonce'] ) && wp_verify_nonce( $_GET['_wpnonce'], 'chap_delete_product_' . $_GET['id'] ) ) {
+            $wpdb->delete( $products_table_name, array( 'id' => intval( $_GET['id'] ) ) );
+            echo '<div class="notice notice-success is-dismissible"><p>محصول با موفقیت حذف شد.</p></div>';
         }
     }
 
-    // Fetch all products to display in the list
     $products = $wpdb->get_results( "SELECT * FROM $products_table_name ORDER BY id DESC" );
     ?>
     <div class="wrap">
-        <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
+        <h1>مدیریت محصولات</h1>
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th style="width: 10%;">ID</th>
+                    <th>نام محصول</th>
+                    <th>قیمت</th>
+                    <th style="width: 20%;">عملیات</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ( $products ) : foreach ( $products as $product ) : ?>
+                    <tr>
+                        <td><?php echo esc_html( $product->id ); ?></td>
+                        <td><strong><?php echo esc_html( $product->name ); ?></strong></td>
+                        <td><?php echo esc_html( number_format( $product->price, 0 ) ); ?> تومان</td>
+                        <td>
+                            <a href="?page=chap-hesab-products&action=edit&id=<?php echo esc_attr($product->id); ?>">ویرایش</a> |
+                            <a href="<?php echo wp_nonce_url( admin_url('admin.php?page=chap-hesab-products&action=delete&id=' . $product->id), 'chap_delete_product_' . $product->id); ?>" style="color: #a00;" onclick="return confirm('آیا از حذف این محصول مطمئن هستید؟')">حذف</a>
+                        </td>
+                    </tr>
+                <?php endforeach; else : ?>
+                    <tr><td colspan="4">هیچ محصولی یافت نشد.</td></tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php
+}
+
+/**
+ * Renders the HTML for the main plugin page, including the customer form.
+ */
+function chap_hesab_main_page_html() {
+    // Router for main page (customers)
+    if ( isset( $_GET['action'] ) && $_GET['action'] === 'edit' && isset( $_GET['id'] ) ) {
+        chap_hesab_render_edit_customer_page( intval( $_GET['id'] ) );
+    } else {
+        chap_hesab_render_customers_list_page();
+    }
+}
+
+function chap_hesab_render_edit_customer_page($customer_id) {
+    global $wpdb;
+    $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
+    $customer = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $customers_table_name WHERE id = %d", $customer_id ) );
+
+    if ( ! $customer ) {
+        echo '<div class="wrap"><h1>مشتری یافت نشد.</h1></div>';
+        return;
+    }
+    ?>
+    <div class="wrap">
+        <h1>ویرایش مشتری</h1>
+        <form method="post" action="<?php echo admin_url( 'admin.php?page=chap-hesab-main' ); ?>">
+            <input type="hidden" name="customer_id" value="<?php echo esc_attr( $customer->id ); ?>" />
+            <?php wp_nonce_field( 'chap_add_edit_customer_nonce' ); ?>
+            <table class="form-table">
+                <tr valign="top">
+                    <th scope="row"><label for="customer_name">نام و نام خانوادگی</label></th>
+                    <td><input type="text" id="customer_name" name="customer_name" class="regular-text" value="<?php echo esc_attr( $customer->name ); ?>" required/></td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="customer_phone">تلفن</label></th>
+                    <td><input type="text" id="customer_phone" name="customer_phone" class="regular-text" value="<?php echo esc_attr( $customer->phone ); ?>"/></td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="customer_email">ایمیل</label></th>
+                    <td><input type="email" id="customer_email" name="customer_email" class="regular-text" value="<?php echo esc_attr( $customer->email ); ?>"/></td>
+                </tr>
+                <tr valign="top">
+                    <th scope="row"><label for="customer_address">آدرس</label></th>
+                    <td><textarea id="customer_address" name="customer_address" rows="3" class="large-text"><?php echo esc_textarea( $customer->address ); ?></textarea></td>
+                </tr>
+            </table>
+            <?php submit_button( 'ذخیره تغییرات' ); ?>
+        </form>
+    </div>
+    <?php
+}
+
+function chap_hesab_render_customers_list_page() {
+    global $wpdb;
+    $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
+
+    // Handle Add/Edit
+    if ( isset( $_POST['submit'] ) && check_admin_referer( 'chap_add_edit_customer_nonce' ) ) {
+        $data = [
+            'name'    => sanitize_text_field( $_POST['customer_name'] ),
+            'email'   => sanitize_email( $_POST['customer_email'] ),
+            'phone'   => sanitize_text_field( $_POST['customer_phone'] ),
+            'address' => sanitize_textarea_field( $_POST['customer_address'] ),
+        ];
+        $customer_id = isset( $_POST['customer_id'] ) ? intval( $_POST['customer_id'] ) : 0;
+
+        if ( ! empty( $data['name'] ) ) {
+            if ( $customer_id > 0 ) {
+                $wpdb->update( $customers_table_name, $data, ['id' => $customer_id] );
+                echo '<div class="notice notice-success is-dismissible"><p>مشتری با موفقیت به‌روزرسانی شد.</p></div>';
+            } else {
+                $wpdb->insert( $customers_table_name, $data );
+                echo '<div class="notice notice-success is-dismissible"><p>مشتری جدید اضافه شد.</p></div>';
+            }
+        } else {
+            echo '<div class="notice notice-error is-dismissible"><p>نام مشتری نمی‌تواند خالی باشد.</p></div>';
+        }
+    }
+
+    // Handle Delete
+    if ( isset( $_GET['action'] ) && $_GET['action'] === 'delete' && isset( $_GET['id'] ) ) {
+        if ( isset( $_GET['_wpnonce'] ) && wp_verify_nonce( $_GET['_wpnonce'], 'chap_delete_customer_' . $_GET['id'] ) ) {
+            $customer_id_to_delete = intval($_GET['id']);
+            // ... (cascading delete logic will be added here)
+            $wpdb->delete( $customers_table_name, array( 'id' => $customer_id_to_delete ) );
+            echo '<div class="notice notice-success is-dismissible"><p>مشتری حذف شد. (منطق حذف فاکتورها در مرحله بعد اضافه میشود)</p></div>';
+        }
+    }
+
+    $customers = $wpdb->get_results( "SELECT * FROM $customers_table_name ORDER BY id DESC" );
+    ?>
+    <div class="wrap">
+        <h1>مدیریت مشتریان</h1>
         <div id="poststuff">
-            <div id="post-body" class="metabox-holder columns-2">
-                <!-- Form for adding new products -->
-                <div id="post-body-content">
-                    <div class="meta-box-sortables ui-sortable">
+             <div id="post-body" class="metabox-holder columns-1">
+                <div class="postbox-container">
+                    <div class="meta-box-sortables">
                         <div class="postbox">
-                            <h2 class="hndle"><span>افزودن محصول جدید</span></h2>
+                            <h2 class="hndle"><span>افزودن/ویرایش مشتری</span></h2>
                             <div class="inside">
                                 <form method="post" action="">
-                                    <?php wp_nonce_field( 'chap_hesab_add_product_nonce' ); ?>
-                                    <p>
-                                        <label for="product_name">نام محصول</label>
-                                        <input type="text" id="product_name" name="product_name" class="widefat" required/>
-                                    </p>
-                                    <p>
-                                        <label for="product_price">قیمت (تومان)</label>
-                                        <input type="text" id="product_price" name="product_price" class="widefat" required/>
-                                    </p>
-                                    <p>
-                                        <label for="product_description">توضیحات</label>
-                                        <textarea id="product_description" name="product_description" rows="4" class="widefat"></textarea>
-                                    </p>
-                                    <p class="submit">
-                                        <input type="submit" name="submit_product" id="submit_product" class="button button-primary" value="افزودن محصول">
-                                    </p>
+                                    <?php wp_nonce_field( 'chap_add_edit_customer_nonce' ); ?>
+                                    <p><label>نام:</label><br><input type="text" name="customer_name" class="widefat" required/></p>
+                                    <p><label>تلفن:</label><br><input type="text" name="customer_phone" class="widefat"/></p>
+                                    <p><label>ایمیل:</label><br><input type="email" name="customer_email" class="widefat"/></p>
+                                    <p><label>آدرس:</label><br><textarea name="customer_address" rows="3" class="widefat"></textarea></p>
+                                    <p class="submit"><input type="submit" name="submit" class="button button-primary" value="ذخیره مشتری"></p>
                                 </form>
                             </div>
                         </div>
-                    </div>
-                </div>
-                <!-- List of existing products -->
-                <div id="postbox-container-1" class="postbox-container">
-                    <div class="meta-box-sortables">
                         <div class="postbox">
-                            <h2 class="hndle"><span>لیست محصولات</span></h2>
+                            <h2 class="hndle"><span>لیست مشتریان</span></h2>
                             <div class="inside">
                                 <table class="wp-list-table widefat fixed striped">
-                                    <thead>
-                                        <tr>
-                                            <th style="width: 15%;">ID</th>
-                                            <th>نام محصول</th>
-                                            <th>قیمت</th>
-                                        </tr>
-                                    </thead>
+                                    <thead><tr><th>نام</th><th>تلفن</th><th>ایمیل</th><th style="width: 20%;">عملیات</th></tr></thead>
                                     <tbody>
-                                        <?php if ( $products ) : ?>
-                                            <?php foreach ( $products as $product ) : ?>
-                                                <tr>
-                                                    <td><?php echo esc_html( $product->id ); ?></td>
-                                                    <td><strong><?php echo esc_html( $product->name ); ?></strong></td>
-                                                    <td><?php echo esc_html( number_format_i18n( $product->price ) ); ?> تومان</td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php else : ?>
+                                        <?php if ( $customers ) : foreach ( $customers as $customer ) : ?>
                                             <tr>
-                                                <td colspan="3">هیچ محصولی یافت نشد.</td>
+                                                <td><strong><?php echo esc_html( $customer->name ); ?></strong></td>
+                                                <td><?php echo esc_html( $customer->phone ); ?></td>
+                                                <td><?php echo esc_html( $customer->email ); ?></td>
+                                                <td>
+                                                    <a href="?page=chap-hesab-main&action=edit&id=<?php echo esc_attr($customer->id); ?>">ویرایش</a> |
+                                                    <a href="<?php echo wp_nonce_url( admin_url('admin.php?page=chap-hesab-main&action=delete&id=' . $customer->id), 'chap_delete_customer_' . $customer->id); ?>" style="color: #a00;" onclick="return confirm('آیا از حذف این مشتری مطمئن هستید؟')">حذف</a>
+                                                </td>
                                             </tr>
+                                        <?php endforeach; else : ?>
+                                            <tr><td colspan="4">هیچ مشتری یافت نشد.</td></tr>
                                         <?php endif; ?>
                                     </tbody>
                                 </table>
@@ -607,91 +756,6 @@ function chap_hesab_products_page_html() {
                 </div>
             </div>
             <br class="clear">
-        </div>
-    </div>
-    <?php
-}
-
-/**
- * Renders the HTML for the main plugin page, including the customer form.
- */
-function chap_hesab_main_page_html() {
-    global $wpdb;
-    $customers_table_name = $wpdb->prefix . 'chap_hesab_customers';
-
-    // Check if user has the required capability
-    if ( ! current_user_can( 'manage_options' ) ) {
-        return;
-    }
-
-    // Handle form submission for adding a new customer
-    if ( isset( $_POST['submit_customer'] ) && check_admin_referer( 'chap_hesab_add_customer_nonce' ) ) {
-        $name    = sanitize_text_field( $_POST['customer_name'] );
-        $email   = sanitize_email( $_POST['customer_email'] );
-        $phone   = sanitize_text_field( $_POST['customer_phone'] );
-        $address = sanitize_textarea_field( $_POST['customer_address'] );
-
-        if ( ! empty( $name ) ) {
-            $result = $wpdb->insert(
-                $customers_table_name,
-                [
-                    'name'    => $name,
-                    'email'   => $email,
-                    'phone'   => $phone,
-                    'address' => $address,
-                ],
-                [ '%s', '%s', '%s', '%s' ]
-            );
-            if ($result) {
-                echo '<div class="notice notice-success is-dismissible"><p>مشتری جدید با موفقیت اضافه شد.</p></div>';
-            } else {
-                echo '<div class="notice notice-error is-dismissible"><p>خطایی در افزودن مشتری رخ داد.</p></div>';
-            }
-        } else {
-            echo '<div class="notice notice-warning is-dismissible"><p>نام مشتری نمی‌تواند خالی باشد.</p></div>';
-        }
-    }
-
-    ?>
-    <div class="wrap">
-        <h1><?php echo esc_html( get_admin_page_title() ); ?></h1>
-
-        <div id="poststuff">
-            <div id="post-body" class="metabox-holder columns-2">
-                <div id="post-body-content">
-                    <div class="meta-box-sortables ui-sortable">
-                        <div class="postbox">
-                            <h2 class="hndle"><span>افزودن مشتری جدید</span></h2>
-                            <div class="inside">
-                                <form method="post" action="">
-                                    <?php wp_nonce_field( 'chap_hesab_add_customer_nonce' ); ?>
-                                    <table class="form-table">
-                                        <tr valign="top">
-                                            <th scope="row"><label for="customer_name">نام و نام خانوادگی</label></th>
-                                            <td><input type="text" id="customer_name" name="customer_name" class="regular-text" required/></td>
-                                        </tr>
-                                        <tr valign="top">
-                                            <th scope="row"><label for="customer_phone">تلفن</label></th>
-                                            <td><input type="text" id="customer_phone" name="customer_phone" class="regular-text"/></td>
-                                        </tr>
-                                        <tr valign="top">
-                                            <th scope="row"><label for="customer_email">ایمیل</label></th>
-                                            <td><input type="email" id="customer_email" name="customer_email" class="regular-text"/></td>
-                                        </tr>
-                                        <tr valign="top">
-                                            <th scope="row"><label for="customer_address">آدرس</label></th>
-                                            <td><textarea id="customer_address" name="customer_address" rows="4" class="large-text"></textarea></td>
-                                        </tr>
-                                    </table>
-                                    <p class="submit">
-                                        <input type="submit" name="submit_customer" id="submit_customer" class="button button-primary" value="افزودن مشتری">
-                                    </p>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
     <?php
