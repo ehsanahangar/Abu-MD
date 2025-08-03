@@ -68,8 +68,118 @@ function chap_hesab_add_admin_menu() {
         'chap-hesab-checks',
         'chap_hesab_checks_page_html'
     );
+
+    // Add sub-menu page for Reports
+    add_submenu_page(
+        'chap-hesab-main',
+        'گزارش‌ها',
+        'گزارش‌ها',
+        'manage_options',
+        'chap-hesab-reports',
+        'chap_hesab_reports_page_html'
+    );
 }
 add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
+
+/**
+ * Renders the Reports page, routing to the correct report view.
+ */
+function chap_hesab_reports_page_html() {
+    global $wpdb;
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return;
+    }
+
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $selected_customer_id = isset( $_GET['customer_id'] ) ? intval( $_GET['customer_id'] ) : 0;
+    ?>
+    <div class="wrap">
+        <h1>گزارش کاردکس مشتری</h1>
+        <form method="get" action="">
+            <input type="hidden" name="page" value="chap-hesab-reports">
+            <label for="customer_id_select">یک مشتری را برای مشاهده گزارش انتخاب کنید:</label>
+            <select name="customer_id" id="customer_id_select">
+                <option value="">-- انتخاب مشتری --</option>
+                <?php
+                $customers = $wpdb->get_results( "SELECT id, name FROM $customers_table ORDER BY name ASC" );
+                foreach ( $customers as $customer ) {
+                    printf(
+                        '<option value="%d" %s>%s</option>',
+                        esc_attr( $customer->id ),
+                        selected( $selected_customer_id, $customer->id, false ),
+                        esc_html( $customer->name )
+                    );
+                }
+                ?>
+            </select>
+            <input type="submit" value="نمایش گزارش" class="button">
+        </form>
+        <hr>
+        <?php
+        if ( $selected_customer_id > 0 ) {
+            $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+            $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+
+            $customer_invoices = $wpdb->get_results($wpdb->prepare("SELECT id, invoice_date as date, total_amount FROM $invoices_table WHERE customer_id = %d", $selected_customer_id));
+            $customer_payments = $wpdb->get_results($wpdb->prepare("SELECT payment_date as date, amount, notes FROM $payments_table WHERE invoice_id IN (SELECT id FROM $invoices_table WHERE customer_id = %d)", $selected_customer_id));
+
+            $transactions = [];
+            foreach ($customer_invoices as $invoice) {
+                $transactions[] = ['date' => $invoice->date, 'description' => 'فاکتور شماره ' . $invoice->id, 'debit' => $invoice->total_amount, 'credit' => 0];
+            }
+            foreach ($customer_payments as $payment) {
+                $transactions[] = ['date' => $payment->date, 'description' => 'پرداخت' . ($payment->notes ? ' - ' . $payment->notes : ''), 'debit' => 0, 'credit' => $payment->amount];
+            }
+
+            usort($transactions, function($a, $b) {
+                return strtotime($a['date']) - strtotime($b['date']);
+            });
+            ?>
+            <h2>کاردکس حساب مشتری: <?php echo esc_html($wpdb->get_var($wpdb->prepare("SELECT name FROM $customers_table WHERE id = %d", $selected_customer_id))); ?></h2>
+            <table class="wp-list-table widefat fixed striped">
+                <thead>
+                    <tr>
+                        <th>تاریخ</th>
+                        <th>شرح</th>
+                        <th>بدهکار</th>
+                        <th>بستانکار</th>
+                        <th>مانده</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    $balance = 0;
+                    if (empty($transactions)) {
+                        echo '<tr><td colspan="5">هیچ تراکنشی برای این مشتری یافت نشد.</td></tr>';
+                    } else {
+                        foreach ($transactions as $tx) {
+                            $balance = $balance + $tx['debit'] - $tx['credit'];
+                            ?>
+                            <tr>
+                                <td><?php echo esc_html(date('Y/m/d', strtotime($tx['date']))); ?></td>
+                                <td><?php echo esc_html($tx['description']); ?></td>
+                                <td><?php echo $tx['debit'] > 0 ? number_format($tx['debit'], 0) . ' تومان' : '-'; ?></td>
+                                <td><?php echo $tx['credit'] > 0 ? number_format($tx['credit'], 0) . ' تومان' : '-'; ?></td>
+                                <td><?php echo number_format($balance, 0); ?> تومان</td>
+                            </tr>
+                            <?php
+                        }
+                    }
+                    ?>
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <th colspan="4" style="text-align:left;">مانده نهایی:</th>
+                        <th><?php echo number_format($balance, 0); ?> تومان</th>
+                    </tr>
+                </tfoot>
+            </table>
+            <?php
+        }
+        ?>
+    </div>
+    <?php
+}
 
 /**
  * Renders the Check Management page.
