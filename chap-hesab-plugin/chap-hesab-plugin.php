@@ -11,6 +11,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+// Include helper files
+require_once plugin_dir_path( __FILE__ ) . 'includes/persian-helpers.php';
+
 /**
  * Adds the main menu and sub-menu pages to the WordPress admin dashboard.
  */
@@ -59,18 +62,131 @@ function chap_hesab_add_admin_menu() {
 add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
 
 /**
- * Renders the HTML for the Invoices List page.
+ * Renders the correct page based on action (list vs view single).
  */
 function chap_hesab_invoices_list_page_html() {
+    if ( isset( $_GET['action'] ) && $_GET['action'] === 'view' && isset( $_GET['id'] ) ) {
+        chap_hesab_render_single_invoice_page( intval( $_GET['id'] ) );
+    } else {
+        chap_hesab_render_invoices_table_page();
+    }
+}
+
+/**
+ * Renders the single invoice view.
+ */
+function chap_hesab_render_single_invoice_page( $invoice_id ) {
     global $wpdb;
-    if ( ! current_user_can( 'manage_options' ) ) {
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $invoice_items_table = $wpdb->prefix . 'chap_hesab_invoice_items';
+    $products_table = $wpdb->prefix . 'chap_hesab_products';
+
+    $invoice = $wpdb->get_row( $wpdb->prepare( "SELECT i.*, c.name as customer_name, c.address as customer_address, c.phone as customer_phone FROM %i AS i LEFT JOIN %i AS c ON i.customer_id = c.id WHERE i.id = %d", $invoices_table, $customers_table, $invoice_id ) );
+    $items = $wpdb->get_results( $wpdb->prepare( "SELECT ii.quantity, ii.price, p.name as product_name FROM %i AS ii LEFT JOIN %i AS p ON ii.product_id = p.id WHERE ii.invoice_id = %d", $invoice_items_table, $products_table, $invoice_id ) );
+
+    if ( ! $invoice ) {
+        echo '<div class="wrap"><h1>فاکتور یافت نشد</h1><p>فاکتور مورد نظر وجود ندارد.</p><a href="?page=chap-hesab-invoices" class="button">بازگشت</a></div>';
         return;
     }
 
+    // Helper data
+    $company_info = ['name' => 'اشک قلم', 'phone' => '۰۹۱۵۳۱۰۸۷۶۳', 'email' => 'ehsanahangar2010@gmail.com'];
+    $quotes = ["آنکه می‌اندیشد، به هدف می‌رسد. - امام علی (ع)", "دانش، میراثی گرانبهاست. - امام علی (ع)", "هنر، کلید فهم زندگی است. - سهراب سپهری"];
+    $random_quote = $quotes[array_rand($quotes)];
+    list($g_y, $g_m, $g_d) = explode('-', date('Y-m-d', strtotime($invoice->invoice_date)));
+    $jalali_date = chap_hesab_gregorian_to_jalali($g_y, $g_m, $g_d);
+
+    ?>
+    <style>
+        #invoice-wrapper { background: #fff; border: 1px solid #e5e5e5; padding: 40px; max-width: 800px; margin: 20px auto; }
+        #invoice-wrapper table { width: 100%; }
+        #invoice-wrapper .invoice-top { margin-bottom: 40px; }
+        #invoice-wrapper .invoice-top h2 { font-size: 28px; margin: 0; }
+        #invoice-wrapper .company-details, #invoice-wrapper .customer-details { font-size: 14px; line-height: 1.6; }
+        #invoice-wrapper .invoice-top table td { vertical-align: top; }
+        #invoice-wrapper .invoice-items-table th, #invoice-wrapper .invoice-items-table td { border: 1px solid #ddd; padding: 8px; text-align: right; }
+        #invoice-wrapper .invoice-items-table th { background: #f9f9f9; }
+        #invoice-wrapper .invoice-footer { margin-top: 40px; text-align: center; color: #777; }
+        @media print { body { background: #fff; } #wpadminbar, #adminmenumain, .wrap > h1, .wrap > .button { display: none; } #invoice-wrapper { box-shadow: none; border: none; margin: 0; max-width: 100%;} }
+    </style>
+    <div class="wrap">
+        <h1>مشاهده فاکتور #<?php echo chap_hesab_to_persian_digits($invoice->id); ?> <a href="#" class="page-title-action" onclick="window.print(); return false;">چاپ</a></h1>
+
+        <div id="invoice-wrapper">
+            <div class="invoice-top">
+                <table cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td class="company-details">
+                            <h2><?php echo esc_html($company_info['name']); ?></h2>
+                            <p>تلفن: <?php echo chap_hesab_to_persian_digits($company_info['phone']); ?><br>
+                               ایمیل: <?php echo esc_html($company_info['email']); ?></p>
+                        </td>
+                        <td style="text-align: left; vertical-align: top;">
+                            <h3>فاکتور فروش</h3>
+                            <p><strong>شماره فاکتور:</strong> <?php echo chap_hesab_to_persian_digits($invoice->id); ?><br>
+                               <strong>تاریخ صدور:</strong> <?php echo chap_hesab_to_persian_digits($jalali_date); ?></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="customer-details">
+                             <strong>صورتحساب برای:</strong><br>
+                             <?php echo esc_html($invoice->customer_name); ?><br>
+                             <?php if($invoice->customer_address) echo esc_html($invoice->customer_address) . '<br>'; ?>
+                             تلفن: <?php echo chap_hesab_to_persian_digits($invoice->customer_phone); ?>
+                        </td>
+                        <td style="text-align: left; vertical-align: bottom;">
+                            <img src="https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=<?php echo urlencode(admin_url('admin.php?page=chap-hesab-invoices&action=view&id=' . $invoice->id)); ?>" alt="QR Code">
+                        </td>
+                    </tr>
+                </table>
+            </div>
+
+            <table class="invoice-items-table" cellpadding="0" cellspacing="0">
+                <thead>
+                    <tr>
+                        <th>شرح محصول/خدمات</th>
+                        <th style="width: 15%;">تعداد</th>
+                        <th style="width: 25%;">قیمت واحد (تومان)</th>
+                        <th style="width: 25%;">مبلغ کل (تومان)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php foreach ($items as $item):
+                        $line_total = $item->price * $item->quantity;
+                    ?>
+                    <tr>
+                        <td><?php echo esc_html($item->product_name); ?></td>
+                        <td><?php echo chap_hesab_to_persian_digits($item->quantity); ?></td>
+                        <td><?php echo chap_hesab_to_persian_digits(number_format($item->price, 0)); ?></td>
+                        <td><?php echo chap_hesab_to_persian_digits(number_format($line_total, 0)); ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+                 <tfoot>
+                    <tr>
+                        <td colspan="2"></td>
+                        <td style="text-align: left; font-weight: bold;">جمع کل:</td>
+                        <td style="font-weight: bold;"><?php echo chap_hesab_to_persian_digits(number_format($invoice->total_amount, 0)); ?> تومان</td>
+                    </tr>
+                </tfoot>
+            </table>
+            <div class="invoice-footer">
+                <p><i><?php echo esc_html($random_quote); ?></i></p>
+            </div>
+        </div>
+    </div>
+    <?php
+}
+
+/**
+ * Renders the page with the list of all invoices.
+ */
+function chap_hesab_render_invoices_table_page() {
+    global $wpdb;
     $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
     $customers_table = $wpdb->prefix . 'chap_hesab_customers';
 
-    // Fetch invoices with customer names
     $invoices_list = $wpdb->get_results( $wpdb->prepare(
         "SELECT i.id, i.total_amount, i.status, i.invoice_date, c.name as customer_name
          FROM %i AS i
@@ -85,9 +201,6 @@ function chap_hesab_invoices_list_page_html() {
         <?php
         if ( isset( $_GET['message'] ) && $_GET['message'] === 'success' ) {
             echo '<div class="notice notice-success is-dismissible"><p>فاکتور جدید با موفقیت ذخیره شد.</p></div>';
-        }
-        if ( isset( $_GET['message'] ) && $_GET['message'] === 'error' ) {
-            echo '<div class="notice notice-error is-dismissible"><p>خطایی در پردازش درخواست رخ داد.</p></div>';
         }
         ?>
 
@@ -109,15 +222,10 @@ function chap_hesab_invoices_list_page_html() {
                             <td><strong>#<?php echo esc_html( $invoice->id ); ?></strong></td>
                             <td><?php echo esc_html( $invoice->customer_name ); ?></td>
                             <td><?php echo number_format( $invoice->total_amount, 2 ); ?> تومان</td>
-                            <td>
-                                <?php
-                                // TODO: Convert to Jalali date
-                                echo esc_html( date( 'Y-m-d', strtotime( $invoice->invoice_date ) ) );
-                                ?>
-                            </td>
+                            <td><?php echo esc_html( date( 'Y-m-d', strtotime( $invoice->invoice_date ) ) ); ?></td>
                             <td><span class="badge badge-<?php echo esc_attr( $invoice->status ); ?>"><?php echo esc_html( $invoice->status ); ?></span></td>
                             <td>
-                                <a href="#">مشاهده</a> |
+                                <a href="?page=chap-hesab-invoices&action=view&id=<?php echo esc_attr( $invoice->id ); ?>">مشاهده</a> |
                                 <a href="#" style="color: #a00;">حذف</a>
                             </td>
                         </tr>
