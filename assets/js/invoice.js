@@ -73,4 +73,21 @@ jQuery(document).ready(function($) {
         });
         $('#invoice-grand-total').text(formatNumber(grandTotal) + ' تومان');
     }
+
+    // Toggle check details fields based on payment method
+    function toggleCheckDetails() {
+        if ($('#payment_method').val() === 'چک') {
+            $('.check-details').show();
+            $('.non-check-details').hide();
+        } else {
+            $('.check-details').hide();
+            $('.non-check-details').show();
+        }
+    }
+
+    // Initial check on page load
+    toggleCheckDetails();
+
+    // Bind event listener
+    $('#payment_method').on('change', toggleCheckDetails);
 });

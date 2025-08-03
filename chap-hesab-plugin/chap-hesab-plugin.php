@@ -58,8 +58,96 @@ function chap_hesab_add_admin_menu() {
         'chap-hesab-invoice-new',
         'chap_hesab_invoice_new_page_html'
     );
+
+    // Add sub-menu page for Check Management
+    add_submenu_page(
+        'chap-hesab-main',
+        'مدیریت چک‌ها',
+        'مدیریت چک‌ها',
+        'manage_options',
+        'chap-hesab-checks',
+        'chap_hesab_checks_page_html'
+    );
 }
 add_action( 'admin_menu', 'chap_hesab_add_admin_menu' );
+
+/**
+ * Renders the Check Management page.
+ */
+function chap_hesab_checks_page_html() {
+    global $wpdb;
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+
+    // Fetch all check payments
+    $checks_list = $wpdb->get_results( $wpdb->prepare(
+        "SELECT p.*, c.name as customer_name
+         FROM %i AS p
+         LEFT JOIN %i AS i ON p.invoice_id = i.id
+         LEFT JOIN %i AS c ON i.customer_id = c.id
+         WHERE p.payment_method = %s
+         ORDER BY p.due_date ASC",
+        $payments_table, $invoices_table, $customers_table, 'چک'
+    ) );
+    ?>
+    <div class="wrap">
+        <h1>مدیریت چک‌ها</h1>
+
+        <?php
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'check_success' ) {
+            echo '<div class="notice notice-success is-dismissible"><p>وضعیت چک با موفقیت به‌روزرسانی شد.</p></div>';
+        }
+        if ( isset( $_GET['message'] ) && $_GET['message'] === 'check_error' ) {
+            echo '<div class="notice notice-error is-dismissible"><p>خطا در به‌روزرسانی وضعیت چک.</p></div>';
+        }
+        ?>
+
+        <p>در این صفحه می‌توانید وضعیت چک‌های دریافتی را مدیریت کنید.</p>
+
+        <table class="wp-list-table widefat fixed striped">
+            <thead>
+                <tr>
+                    <th>مشتری</th>
+                    <th>مبلغ</th>
+                    <th>تاریخ سررسید</th>
+                    <th>شماره چک/یادداشت</th>
+                    <th style="width: 25%;">تغییر وضعیت</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php if ( ! empty( $checks_list ) ) : ?>
+                    <?php foreach ( $checks_list as $check ) : ?>
+                        <tr>
+                            <td><?php echo esc_html( $check->customer_name ); ?><br><small>مربوط به فاکتور <a href="?page=chap-hesab-invoices&action=view&id=<?php echo esc_attr($check->invoice_id); ?>">#<?php echo esc_html($check->invoice_id); ?></a></small></td>
+                            <td><?php echo number_format($check->amount, 0); ?> تومان</td>
+                            <td><?php echo esc_html($check->due_date); ?></td>
+                            <td><?php echo esc_html($check->notes); ?></td>
+                            <td>
+                                <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+                                    <input type="hidden" name="action" value="chap_hesab_update_check_status">
+                                    <input type="hidden" name="payment_id" value="<?php echo esc_attr($check->id); ?>">
+                                    <?php wp_nonce_field('chap_hesab_update_check_nonce'); ?>
+                                    <select name="check_status">
+                                        <option value="pending" <?php selected($check->check_status, 'pending'); ?>>در انتظار</option>
+                                        <option value="cleared" <?php selected($check->check_status, 'cleared'); ?>>پاس شده</option>
+                                        <option value="bounced" <?php selected($check->check_status, 'bounced'); ?>>برگشتی</option>
+                                    </select>
+                                    <button type="submit" class="button button-small">ذخیره</button>
+                                </form>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                <?php else : ?>
+                    <tr>
+                        <td colspan="5" style="text-align:center;">هیچ چکی ثبت نشده است.</td>
+                    </tr>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <?php
+}
 
 /**
  * Renders the correct page based on action (list vs view single).
@@ -209,7 +297,7 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
                                 <th><label for="payment_date">تاریخ پرداخت</label></th>
                                 <td><input type="date" id="payment_date" name="payment_date" class="regular-text" value="<?php echo date('Y-m-d'); ?>" required></td>
                             </tr>
-                             <tr>
+                            <tr>
                                 <th><label for="payment_method">روش پرداخت</label></th>
                                 <td>
                                     <select id="payment_method" name="payment_method">
@@ -220,9 +308,17 @@ function chap_hesab_render_single_invoice_page( $invoice_id ) {
                                     </select>
                                 </td>
                             </tr>
-                            <tr>
+                            <tr class="check-details" style="display: none;">
+                                <th><label for="due_date">تاریخ سررسید چک</label></th>
+                                <td><input type="date" id="due_date" name="due_date" class="regular-text"></td>
+                            </tr>
+                            <tr class="check-details" style="display: none;">
                                 <th><label for="payment_notes">یادداشت (شماره چک و...)</label></th>
                                 <td><textarea id="payment_notes" name="payment_notes" rows="3" class="large-text"></textarea></td>
+                            </tr>
+                            <tr class="non-check-details">
+                                <th><label for="payment_notes_general">یادداشت</label></th>
+                                <td><textarea id="payment_notes_general" name="payment_notes_general" rows="3" class="large-text"></textarea></td>
                             </tr>
                         </table>
                         <?php submit_button('ثبت پرداخت'); ?>
@@ -669,8 +765,10 @@ function chap_hesab_plugin_activate() {
         invoice_id bigint(20) unsigned NOT NULL,
         amount decimal(19, 2) NOT NULL,
         payment_method varchar(50) NOT NULL,
-        payment_date datetime NOT NULL,
+        payment_date date NOT NULL,
         notes text,
+        due_date date DEFAULT NULL,
+        check_status varchar(20) DEFAULT NULL,
         created_at timestamp DEFAULT CURRENT_TIMESTAMP NOT NULL,
         PRIMARY KEY  (id),
         KEY invoice_id (invoice_id)
@@ -843,3 +941,74 @@ function chap_hesab_add_payment_handler() {
     exit;
 }
 add_action( 'admin_post_chap_hesab_add_payment', 'chap_hesab_add_payment_handler' );
+
+/**
+ * Handles the submission of the check status update form.
+ */
+function chap_hesab_update_check_status_handler() {
+    // Security checks
+    if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( $_POST['_wpnonce'], 'chap_hesab_update_check_nonce' ) ) {
+        wp_die( 'Nonce verification failed!' );
+    }
+    if ( ! current_user_can( 'manage_options' ) ) {
+        wp_die( 'You do not have permission to perform this action.' );
+    }
+
+    global $wpdb;
+    $payments_table = $wpdb->prefix . 'chap_hesab_payments';
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+
+    // Sanitize data
+    $payment_id   = isset( $_POST['payment_id'] ) ? intval( $_POST['payment_id'] ) : 0;
+    $new_check_status = isset( $_POST['check_status'] ) ? sanitize_text_field( $_POST['check_status'] ) : '';
+    $redirect_url = admin_url( 'admin.php?page=chap-hesab-checks' );
+
+    if ( $payment_id <= 0 || ! in_array( $new_check_status, ['pending', 'cleared', 'bounced'] ) ) {
+        wp_redirect( $redirect_url . '&message=check_error' );
+        exit;
+    }
+
+    // Get the payment record BEFORE updating
+    $payment = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM %i WHERE id = %d", $payments_table, $payment_id ) );
+    if ( ! $payment ) {
+        wp_redirect( $redirect_url . '&message=check_error' );
+        exit;
+    }
+    $old_check_status = $payment->check_status;
+
+    // Update the check status in the payments table
+    $wpdb->update( $payments_table, ['check_status' => $new_check_status], ['id' => $payment_id], ['%s'], ['%d'] );
+
+    // If the status changed to or from 'cleared', we need to update the parent invoice
+    if ( $new_check_status !== $old_check_status && ($new_check_status === 'cleared' || $old_check_status === 'cleared') ) {
+        $invoice = $wpdb->get_row( $wpdb->prepare( "SELECT total_amount, amount_paid FROM %i WHERE id = %d", $invoices_table, $payment->invoice_id ) );
+
+        $new_amount_paid = $invoice->amount_paid;
+        if ($new_check_status === 'cleared') {
+            $new_amount_paid += $payment->amount; // Add payment amount
+        } elseif ($old_check_status === 'cleared') {
+            $new_amount_paid -= $payment->amount; // Subtract payment amount
+        }
+
+        // Determine new invoice status
+        $new_invoice_status = 'unpaid';
+        if ( $new_amount_paid >= $invoice->total_amount ) {
+            $new_invoice_status = 'paid';
+            $new_amount_paid = $invoice->total_amount;
+        } elseif ($new_amount_paid > 0) {
+            $new_invoice_status = 'partially-paid';
+        }
+
+        $wpdb->update(
+            $invoices_table,
+            [ 'amount_paid' => $new_amount_paid, 'status' => $new_invoice_status ],
+            [ 'id' => $payment->invoice_id ],
+            [ '%f', '%s' ],
+            [ '%d' ]
+        );
+    }
+
+    wp_redirect( $redirect_url . '&message=check_success' );
+    exit;
+}
+add_action( 'admin_post_chap_hesab_update_check_status', 'chap_hesab_update_check_status_handler' );
