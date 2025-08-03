@@ -191,6 +191,57 @@ function chap_hesab_reports_page_html() {
     <?php
 }
 
+// -- REST API ENDPOINTS --
+
+function chap_hesab_api_permission_check() {
+    return current_user_can( 'manage_options' );
+}
+
+function chap_hesab_register_api_routes() {
+    $namespace = 'chap-hesab/v1';
+
+    register_rest_route( $namespace, '/customers', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_customers',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+
+    register_rest_route( $namespace, '/customers', array(
+        'methods' => 'POST',
+        'callback' => 'chap_hesab_api_create_customer',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+}
+add_action( 'rest_api_init', 'chap_hesab_register_api_routes' );
+
+function chap_hesab_api_get_customers() {
+    global $wpdb;
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $results = $wpdb->get_results( "SELECT * FROM $customers_table ORDER BY id DESC" );
+    return new WP_REST_Response( $results, 200 );
+}
+
+function chap_hesab_api_create_customer( WP_REST_Request $request ) {
+    global $wpdb;
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $params = $request->get_json_params();
+
+    $name = sanitize_text_field( $params['name'] );
+    if ( empty( $name ) ) {
+        return new WP_Error( 'no_name', 'نام مشتری اجباری است.', array( 'status' => 400 ) );
+    }
+
+    $wpdb->insert( $customers_table, [
+        'name'    => $name,
+        'email'   => sanitize_email( $params['email'] ),
+        'phone'   => sanitize_text_field( $params['phone'] ),
+        'address' => sanitize_textarea_field( $params['address'] ),
+    ] );
+    $new_id = $wpdb->insert_id;
+
+    return new WP_REST_Response( ['id' => $new_id, 'message' => 'مشتری با موفقیت ایجاد شد.'], 201 );
+}
+
 /**
  * Renders the Check Management page.
  */
@@ -1203,6 +1254,46 @@ function chap_hesab_update_check_status_handler() {
     exit;
 }
 add_action( 'admin_post_chap_hesab_update_check_status', 'chap_hesab_update_check_status_handler' );
+
+// -- FRONT-END APP INFRASTRUCTURE --
+
+/**
+ * Enqueues scripts and styles for the front-end app.
+ */
+function chap_hesab_enqueue_frontend_assets() {
+    global $post;
+    if ( is_a( $post, 'WP_Post' ) && has_shortcode( $post->post_content, 'chap_hesab_app' ) ) {
+        // Enqueue Bootstrap CSS
+        wp_enqueue_style( 'bootstrap-css', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css' );
+        // Enqueue custom app CSS
+        wp_enqueue_style( 'chap-hesab-app-css', plugin_dir_url( __FILE__ ) . 'assets/css/app.css' );
+
+        // Enqueue Bootstrap JS
+        wp_enqueue_script( 'bootstrap-js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js', array(), '5.3.0', true );
+        // Enqueue custom app JS
+        wp_enqueue_script( 'chap-hesab-app-js', plugin_dir_url( __FILE__ ) . 'assets/js/app.js', array( 'jquery', 'bootstrap-js' ), '1.0.0', true );
+
+        // Pass data to our script
+        wp_localize_script( 'chap-hesab-app-js', 'chapHesabData', array(
+            'api_url' => esc_url_raw( rest_url( 'chap-hesab/v1/' ) ),
+            'nonce'   => wp_create_nonce( 'wp_rest' )
+        ) );
+    }
+}
+add_action( 'wp_enqueue_scripts', 'chap_hesab_enqueue_frontend_assets' );
+
+/**
+ * Renders the root element for the front-end app via a shortcode.
+ */
+function chap_hesab_app_shortcode_handler() {
+    // Check if user has permission
+    if ( ! current_user_can( 'manage_options' ) ) {
+        return '<p>شما اجازه دسترسی به این بخش را ندارید.</p>';
+    }
+    // Return the root div for the JS app to mount on
+    return '<div id="chap-hesab-app-container">درحال بارگذاری اپلیکیشن حسابداری...</div>';
+}
+add_shortcode( 'chap_hesab_app', 'chap_hesab_app_shortcode_handler' );
 
 // -- SETTINGS API --
 
