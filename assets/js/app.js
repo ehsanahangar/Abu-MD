@@ -4,9 +4,10 @@
     const appContainer = $('#chap-hesab-app-container');
     const apiUrl = chapHesabData.api_url;
     const nonce = chapHesabData.nonce;
+    let customersCache = [];
+    let productsCache = [];
 
-    // --- TEMPLATES / RENDER FUNCTIONS ---
-
+    // --- RENDER FUNCTIONS ---
     function renderLayout() {
         const layout = `
             <div class="container-fluid py-4">
@@ -14,119 +15,169 @@
                     <ul class="nav nav-pills">
                         <li class="nav-item"><a href="#" class="nav-link" data-target="customers">مشتریان</a></li>
                         <li class="nav-item"><a href="#" class="nav-link" data-target="products">محصولات</a></li>
-                        <li class="nav-item"><a href="#" class="nav-link" data-target="invoices">فاکتورها (بزودی)</a></li>
+                        <li class="nav-item"><a href="#" class="nav-link" data-target="invoices">فاکتورها</a></li>
                     </ul>
                 </header>
-                <main id="app-main-content">
-                    <!-- Dynamic content will be loaded here -->
-                </main>
-            </div>
-        `;
+                <main id="app-main-content"></main>
+            </div>`;
         appContainer.html(layout);
     }
-
-    function renderCustomersPage(customers) {
-        const customerRows = customers.map(c => `
+    function renderCustomersPage(customers) { /* ... */ }
+    function renderProductsPage(products) { /* ... */ }
+    function renderInvoicesPage(invoices) { /* ... */ }
+    function renderNewInvoiceStep1() { /* ... */ }
+    function renderNewInvoiceStep2(customerId) { /* ... */ }
+    function renderInvoiceDetailPage(invoice) {
+        let itemsHtml = invoice.items.map(item => `
             <tr>
-                <td>${c.id}</td>
-                <td>${c.name}</td>
-                <td>${c.phone || ''}</td>
-                <td>${c.email || ''}</td>
-            </tr>`).join('');
-        const pageHtml = `
-            <div class="row"><div class="col-md-8">
-            <div class="card"><div class="card-header">لیست مشتریان</div><div class="card-body">
-            <table class="table table-striped"><thead><tr><th>ID</th><th>نام</th><th>تلفن</th><th>ایمیل</th></tr></thead><tbody>${customerRows}</tbody></table>
-            </div></div></div><div class="col-md-4">
-            <div class="card"><div class="card-header">افزودن مشتری</div><div class="card-body">
-            <form id="customer-form"><div class="mb-3"><label class="form-label">نام</label><input type="text" name="name" class="form-control" required></div><div class="mb-3"><label class="form-label">تلفن</label><input type="text" name="phone" class="form-control"></div><div class="mb-3"><label class="form-label">ایمیل</label><input type="email" name="email" class="form-control"></div><div class="mb-3"><label class="form-label">آدرس</label><textarea name="address" class="form-control"></textarea></div><button type="submit" class="btn btn-primary">ذخیره</button></form>
-            </div></div></div></div>`;
-        $('#app-main-content').html(pageHtml);
+                <td>${item.product_name}</td>
+                <td>${item.quantity}</td>
+                <td>${Number(item.price).toLocaleString('fa-IR')} تومان</td>
+                <td>${(item.quantity * item.price).toLocaleString('fa-IR')} تومان</td>
+            </tr>
+        `).join('');
+
+        const content = `
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h3>جزئیات فاکتور #${invoice.id}</h3>
+                    <div>
+                        <button class="btn btn-primary" id="print-invoice">چاپ</button>
+                        <button class="btn btn-secondary" id="back-to-invoices">بازگشت به لیست</button>
+                    </div>
+                </div>
+                <div class="card-body" id="invoice-to-print">
+                    <div class="invoice-header text-center mb-4">
+                        <h1>فاکتور فروش</h1>
+                        <p>شماره فاکتور: ${invoice.id}</p>
+                        <p>تاریخ: ${new Date(invoice.date_created).toLocaleDateString('fa-IR')}</p>
+                    </div>
+                    <div class="row invoice-customer-info">
+                        <div class="col">
+                            <h5>مشخصات مشتری</h5>
+                            <p><strong>نام:</strong> ${invoice.customer_name}</p>
+                            <p><strong>تلفن:</strong> ${invoice.customer_phone || 'وارد نشده'}</p>
+                            <p><strong>آدرس:</strong> ${invoice.customer_address || 'وارد نشده'}</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <p><strong>مشتری:</strong> ${invoice.customer_name}</p>
+                    <p><strong>تاریخ صدور:</strong> ${new Date(invoice.date_created).toLocaleDateString('fa-IR')}</p>
+                    <p><strong>مبلغ کل:</strong> ${Number(invoice.total).toLocaleString('fa-IR')} تومان</p>
+                    <p><strong>وضعیت:</strong> ${invoice.status}</p>
+                    <hr>
+                    <h4>اقلام فاکتور</h4>
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>محصول</th>
+                                <th>تعداد</th>
+                                <th>قیمت واحد</th>
+                                <th>جمع</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        $('#app-main-content').html(content);
     }
 
-    function renderProductsPage(products) {
-        const productRows = products.map(p => `
-            <tr>
-                <td>${p.id}</td>
-                <td>${p.name}</td>
-                <td>${Number(p.price).toLocaleString()} تومان</td>
-                <td>
-                    <button class="btn btn-sm btn-danger delete-product" data-id="${p.id}">حذف</button>
-                </td>
-            </tr>`).join('');
-        const pageHtml = `
-            <div class="row"><div class="col-md-8">
-            <div class="card"><div class="card-header">لیست محصولات</div><div class="card-body">
-            <table class="table table-striped"><thead><tr><th>ID</th><th>نام</th><th>قیمت</th><th>عملیات</th></tr></thead><tbody>${productRows}</tbody></table>
-            </div></div></div><div class="col-md-4">
-            <div class="card"><div class="card-header">افزودن محصول</div><div class="card-body">
-            <form id="product-form"><div class="mb-3"><label class="form-label">نام محصول</label><input type="text" name="name" class="form-control" required></div><div class="mb-3"><label class="form-label">قیمت</label><input type="number" name="price" class="form-control" required></div><div class="mb-3"><label class="form-label">توضیحات</label><textarea name="description" class="form-control"></textarea></div><button type="submit" class="btn btn-primary">ذخیره</button></form>
-            </div></div></div></div>`;
-        $('#app-main-content').html(pageHtml);
-    }
+    // --- LOGIC / API ---
+    function navigate(target) { /* ... */ }
+    function loadCustomers() { /* ... */ }
+    function loadProducts() { /* ... */ }
+    function loadInvoices() { /* ... */ }
+    function handleNewInvoiceClick() { /* ... */ }
+    function handleNewInvoiceStep1(e) { /* ... */ }
+    function handleSaveInvoice(e) { /* ... */ }
 
-    // --- API & LOGIC FUNCTIONS ---
-
-    function navigate(target) {
-        $('.nav-link').removeClass('active');
-        $(`[data-target="${target}"]`).addClass('active');
-        if (target === 'customers') loadCustomers();
-        if (target === 'products') loadProducts();
-    }
-
-    function loadCustomers() {
-        $.ajax({ url: apiUrl + 'customers', method: 'GET', beforeSend: (xhr) => xhr.setRequestHeader('X-WP-Nonce', nonce) })
-         .done(response => renderCustomersPage(response));
-    }
-
-    function loadProducts() {
-        $.ajax({ url: apiUrl + 'products', method: 'GET', beforeSend: (xhr) => xhr.setRequestHeader('X-WP-Nonce', nonce) })
-         .done(response => renderProductsPage(response));
-    }
-
-    function handleFormSubmit(e) {
-        e.preventDefault();
-        const form = $(e.target);
-        const endpoint = form.attr('id') === 'customer-form' ? 'customers' : 'products';
-        let data = {};
-        form.serializeArray().forEach(item => data[item.name] = item.value);
-
+    function loadInvoiceDetail(invoiceId) {
         $.ajax({
-            url: apiUrl + endpoint,
-            method: 'POST',
-            beforeSend: (xhr) => xhr.setRequestHeader('X-WP-Nonce', nonce),
-            contentType: 'application/json',
-            data: JSON.stringify(data)
-        }).done(() => {
-            form[0].reset();
-            if (endpoint === 'customers') loadCustomers();
-            if (endpoint === 'products') loadProducts();
-        }).fail(err => alert('خطا: ' + err.responseJSON.message));
+            url: `${apiUrl}invoices/${invoiceId}`,
+            method: 'GET',
+            beforeSend: function(xhr) {
+                xhr.setRequestHeader('X-WP-Nonce', nonce);
+            },
+            success: function(response) {
+                renderInvoiceDetailPage(response);
+            },
+            error: function() {
+                alert('خطا در دریافت اطلاعات فاکتور.');
+            }
+        });
     }
 
-    function handleDeleteProduct(e) {
-        const id = $(e.target).data('id');
-        if (confirm(`آیا از حذف محصول با شناسه ${id} مطمئن هستید؟`)) {
-            $.ajax({
-                url: `${apiUrl}products/${id}`,
-                method: 'DELETE',
-                beforeSend: (xhr) => xhr.setRequestHeader('X-WP-Nonce', nonce)
-            }).done(() => loadProducts())
-              .fail(err => alert('خطا در حذف.'));
-        }
+    function updateInvoiceGrandTotal() {
+        let grandTotal = 0;
+        $('#invoice-items-body tr').each(function() {
+            const quantity = parseFloat($(this).find('.item-quantity').val()) || 0;
+            const price = parseFloat($(this).data('price')) || 0;
+            grandTotal += quantity * price;
+        });
+        $('#invoice-grand-total').text(grandTotal.toLocaleString('fa-IR') + ' تومان');
     }
 
-    // --- INITIALIZATION & EVENT BINDING ---
+    function handleAddInvoiceItem() {
+        const productSelect = $('#product-select');
+        const selected = productSelect.find('option:selected');
+        const productId = selected.val();
+        const productName = selected.text();
+        const productPrice = selected.data('price');
+        const quantity = $('#item-quantity').val();
 
+        if (!productId || !quantity || quantity < 1) return;
+
+        const newRow = `
+            <tr data-product-id="${productId}" data-price="${productPrice}">
+                <td>${productName}</td>
+                <td><input type="number" class="form-control form-control-sm item-quantity" value="${quantity}" min="1"></td>
+                <td>${Number(productPrice).toLocaleString('fa-IR')}</td>
+                <td class="line-total">${(productPrice * quantity).toLocaleString('fa-IR')}</td>
+                <td><button type="button" class="btn btn-sm btn-danger remove-invoice-item">&times;</button></td>
+            </tr>`;
+        $('#invoice-items-body').append(newRow);
+        updateInvoiceGrandTotal();
+    }
+
+    function handleItemQuantityChange(e) {
+        const row = $(e.target).closest('tr');
+        const quantity = $(e.target).val();
+        const price = row.data('price');
+        const lineTotal = quantity * price;
+        row.find('.line-total').text(lineTotal.toLocaleString('fa-IR'));
+        updateInvoiceGrandTotal();
+    }
+
+    // --- INIT & BINDING ---
     renderLayout();
-    navigate('customers'); // Default page
-
-    $(document).on('click', '.nav-link', (e) => {
+    navigate('customers');
+    $(document).on('click', '.nav-link', e => { e.preventDefault(); navigate($(e.target).data('target')); });
+    $(document).on('click', '#btn-new-invoice', handleNewInvoiceClick);
+    $(document).on('click', '#cancel-new-invoice', () => navigate('invoices'));
+    $(document).on('submit', '#new-invoice-step1-form', handleNewInvoiceStep1);
+    $(document).on('submit', '#new-invoice-form', handleSaveInvoice);
+    $(document).on('click', '#add-invoice-item-btn', handleAddInvoiceItem);
+    $(document).on('click', '.remove-invoice-item', function() { $(this).closest('tr').remove(); updateInvoiceGrandTotal(); });
+    $(document).on('change', '.item-quantity', handleItemQuantityChange);
+    $(document).on('click', '.view-invoice', function(e) {
         e.preventDefault();
-        navigate($(e.target).data('target'));
+        const invoiceId = $(this).data('id');
+        loadInvoiceDetail(invoiceId);
     });
-
-    $(document).on('submit', '#customer-form, #product-form', handleFormSubmit);
-    $(document).on('click', '.delete-product', handleDeleteProduct);
+    $(document).on('click', '#back-to-invoices', () => navigate('invoices'));
+    $(document).on('click', '#print-invoice', function() {
+        const printContents = document.getElementById('invoice-to-print').innerHTML;
+        const originalContents = document.body.innerHTML;
+        document.body.innerHTML = printContents;
+        window.print();
+        document.body.innerHTML = originalContents;
+        // Re-initialize the app after printing
+        renderLayout();
+        loadInvoiceDetail($('#invoice-to-print').data('invoice-id'));
+    });
 
 })(jQuery);

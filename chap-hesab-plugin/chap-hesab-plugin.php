@@ -228,6 +228,23 @@ function chap_hesab_register_api_routes() {
         'callback' => 'chap_hesab_api_delete_product',
         'permission_callback' => 'chap_hesab_api_permission_check',
     ) );
+
+    // Invoice Routes
+    register_rest_route( $namespace, '/invoices', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_invoices',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/invoices/(?P<id>\d+)', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_single_invoice',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/invoices', array(
+        'methods' => 'POST',
+        'callback' => 'chap_hesab_api_create_invoice',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
 }
 add_action( 'rest_api_init', 'chap_hesab_register_api_routes' );
 
@@ -302,6 +319,92 @@ function chap_hesab_api_delete_product( WP_REST_Request $request ) {
 
     $wpdb->delete( $products_table, array( 'id' => $product_id ) );
     return new WP_REST_Response( ['message' => 'محصول حذف شد.'], 200 );
+}
+
+function chap_hesab_api_get_invoices() {
+    global $wpdb;
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+
+    $results = $wpdb->get_results( $wpdb->prepare(
+        "SELECT i.id, i.total_amount, i.status, i.invoice_date, c.name as customer_name
+         FROM %i AS i
+         LEFT JOIN %i AS c ON i.customer_id = c.id
+         ORDER BY i.id DESC",
+        $invoices_table, $customers_table
+    ) );
+    return new WP_REST_Response( $results, 200 );
+}
+
+function chap_hesab_api_get_single_invoice( WP_REST_Request $request ) {
+    global $wpdb;
+    $invoice_id = intval( $request['id'] );
+
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $customers_table = $wpdb->prefix . 'chap_hesab_customers';
+    $invoice_items_table = $wpdb->prefix . 'chap_hesab_invoice_items';
+    $products_table = $wpdb->prefix . 'chap_hesab_products';
+
+    $invoice = $wpdb->get_row( $wpdb->prepare( "SELECT i.*, c.name as customer_name, c.address as customer_address, c.phone as customer_phone FROM %i AS i LEFT JOIN %i AS c ON i.customer_id = c.id WHERE i.id = %d", $invoices_table, $customers_table, $invoice_id ) );
+
+    if ( ! $invoice ) {
+        return new WP_Error( 'not_found', 'فاکتور یافت نشد.', array( 'status' => 404 ) );
+    }
+
+    // Rename 'total_amount' to 'total' to match front-end expectations
+    $invoice->total = $invoice->total_amount;
+    unset($invoice->total_amount);
+
+    // Rename 'invoice_date' to 'date_created'
+    $invoice->date_created = $invoice->invoice_date;
+    unset($invoice->invoice_date);
+
+    $items = $wpdb->get_results( $wpdb->prepare( "SELECT ii.quantity, ii.price, p.name as product_name FROM %i AS ii LEFT JOIN %i AS p ON ii.product_id = p.id WHERE ii.invoice_id = %d", $invoice_items_table, $products_table, $invoice_id ) );
+
+    $invoice->items = $items;
+
+    return new WP_REST_Response( $invoice, 200 );
+}
+
+function chap_hesab_api_create_invoice( WP_REST_Request $request ) {
+    global $wpdb;
+    $invoices_table = $wpdb->prefix . 'chap_hesab_invoices';
+    $invoice_items_table = $wpdb->prefix . 'chap_hesab_invoice_items';
+
+    $params = $request->get_json_params();
+    $customer_id = isset( $params['customer_id'] ) ? intval( $params['customer_id'] ) : 0;
+    $invoice_items = isset( $params['items'] ) ? $params['items'] : [];
+
+    if ( empty($customer_id) || empty($invoice_items) ) {
+        return new WP_Error( 'bad_request', 'اطلاعات فاکتور ناقص است.', array( 'status' => 400 ) );
+    }
+
+    $total_amount = 0;
+    foreach( $invoice_items as $item ) {
+        $total_amount += floatval( $item['price'] ) * intval( $item['quantity'] );
+    }
+
+    $wpdb->insert( $invoices_table, [
+        'customer_id'  => $customer_id,
+        'total_amount' => $total_amount,
+        'invoice_date' => current_time( 'mysql' ),
+    ], [ '%d', '%f', '%s' ] );
+    $invoice_id = $wpdb->insert_id;
+
+    if ( ! $invoice_id ) {
+        return new WP_Error( 'db_error', 'خطا در ذخیره فاکتور.', array( 'status' => 500 ) );
+    }
+
+    foreach ( $invoice_items as $item ) {
+        $wpdb->insert( $invoice_items_table, [
+            'invoice_id' => $invoice_id,
+            'product_id' => intval( $item['product_id'] ),
+            'quantity'   => intval( $item['quantity'] ),
+            'price'      => floatval( $item['price'] ),
+        ], [ '%d', '%d', '%d', '%f' ] );
+    }
+
+    return new WP_REST_Response( ['id' => $invoice_id, 'message' => 'فاکتور با موفقیت ایجاد شد.'], 201 );
 }
 
 /**

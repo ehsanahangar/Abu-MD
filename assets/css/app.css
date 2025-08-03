@@ -1,1 +1,24 @@
 /* Custom styles for the front-end application will go here. */
+
+@media print {
+    body, #chap-hesab-app-container {
+        background: #fff;
+    }
+    .card-header .btn, .nav-pills {
+        display: none !important;
+    }
+    #invoice-to-print {
+        box-shadow: none;
+        border: none;
+        margin: 0;
+        padding: 0;
+        max-width: 100%;
+    }
+    .invoice-header h1 {
+        font-size: 24pt;
+    }
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+    }
+}
