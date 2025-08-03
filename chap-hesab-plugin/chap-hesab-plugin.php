@@ -211,6 +211,23 @@ function chap_hesab_register_api_routes() {
         'callback' => 'chap_hesab_api_create_customer',
         'permission_callback' => 'chap_hesab_api_permission_check',
     ) );
+
+    // Product Routes
+    register_rest_route( $namespace, '/products', array(
+        'methods' => 'GET',
+        'callback' => 'chap_hesab_api_get_products',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/products', array(
+        'methods' => 'POST',
+        'callback' => 'chap_hesab_api_create_or_update_product',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
+    register_rest_route( $namespace, '/products/(?P<id>\d+)', array(
+        'methods' => 'DELETE',
+        'callback' => 'chap_hesab_api_delete_product',
+        'permission_callback' => 'chap_hesab_api_permission_check',
+    ) );
 }
 add_action( 'rest_api_init', 'chap_hesab_register_api_routes' );
 
@@ -240,6 +257,51 @@ function chap_hesab_api_create_customer( WP_REST_Request $request ) {
     $new_id = $wpdb->insert_id;
 
     return new WP_REST_Response( ['id' => $new_id, 'message' => 'مشتری با موفقیت ایجاد شد.'], 201 );
+}
+
+function chap_hesab_api_get_products() {
+    global $wpdb;
+    $products_table = $wpdb->prefix . 'chap_hesab_products';
+    $results = $wpdb->get_results( "SELECT * FROM $products_table ORDER BY id DESC" );
+    return new WP_REST_Response( $results, 200 );
+}
+
+function chap_hesab_api_create_or_update_product( WP_REST_Request $request ) {
+    global $wpdb;
+    $products_table = $wpdb->prefix . 'chap_hesab_products';
+    $params = $request->get_json_params();
+
+    $data = [
+        'name'        => sanitize_text_field( $params['name'] ),
+        'description' => sanitize_textarea_field( $params['description'] ),
+        'price'       => floatval( $params['price'] ),
+    ];
+    $product_id = isset( $params['id'] ) ? intval( $params['id'] ) : 0;
+
+    if ( empty( $data['name'] ) ) {
+        return new WP_Error( 'no_name', 'نام محصول اجباری است.', array( 'status' => 400 ) );
+    }
+
+    if ( $product_id > 0 ) {
+        $wpdb->update( $products_table, $data, ['id' => $product_id] );
+        return new WP_REST_Response( ['id' => $product_id, 'message' => 'محصول به‌روزرسانی شد.'], 200 );
+    } else {
+        $wpdb->insert( $products_table, $data );
+        return new WP_REST_Response( ['id' => $wpdb->insert_id, 'message' => 'محصول جدید ایجاد شد.'], 201 );
+    }
+}
+
+function chap_hesab_api_delete_product( WP_REST_Request $request ) {
+    global $wpdb;
+    $products_table = $wpdb->prefix . 'chap_hesab_products';
+    $product_id = intval( $request['id'] );
+
+    if ( $product_id <= 0 ) {
+        return new WP_Error( 'invalid_id', 'شناسه محصول نامعتبر است.', array( 'status' => 400 ) );
+    }
+
+    $wpdb->delete( $products_table, array( 'id' => $product_id ) );
+    return new WP_REST_Response( ['message' => 'محصول حذف شد.'], 200 );
 }
 
 /**
