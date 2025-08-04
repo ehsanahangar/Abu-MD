@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <title>فاکتور شماره {{ invoice.id }}</title>
+    <style>
+        body {
+            font-family: 'DejaVu Sans', sans-serif; /* Font that supports Persian characters */
+            font-size: 12px;
+            line-height: 1.6;
+        }
+        .invoice-box {
+            max-width: 800px;
+            margin: auto;
+            padding: 30px;
+            border: 1px solid #eee;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+            color: #555;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            color: #333;
+        }
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+        .details-box {
+            padding: 15px;
+            border: 1px solid #eee;
+        }
+        .details-box h3 {
+            margin-top: 0;
+            font-size: 14px;
+        }
+        table {
+            width: 100%;
+            line-height: inherit;
+            text-align: right;
+            border-collapse: collapse;
+        }
+        table th, table td {
+            padding: 8px;
+            border: 1px solid #ddd;
+        }
+        table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .total {
+            text-align: left;
+            margin-top: 20px;
+        }
+        .total p {
+            font-size: 14px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-box">
+        <div class="header">
+            <h1>فاکتور فروش</h1>
+            <p>چاپخانه و کانون تبلیغاتی نمونه</p>
+        </div>
+
+        <div class="details-grid">
+            <div class="details-box">
+                <h3>اطلاعات فروشنده</h3>
+                <p>
+                    <strong>نام شرکت:</strong> چاپخانه نمونه<br>
+                    <strong>آدرس:</strong> تهران، میدان بهارستان، ...<br>
+                    <strong>تلفن:</strong> 021-12345678
+                </p>
+            </div>
+            <div class="details-box">
+                <h3>اطلاعات خریدار</h3>
+                <p>
+                    <strong>نام مشتری:</strong> {{ invoice.customer.name }}<br>
+                    <strong>تلفن:</strong> {{ invoice.customer.phone }}<br>
+                    <strong>آدرس:</strong> {{ invoice.customer.address }}
+                </p>
+            </div>
+        </div>
+
+        <div class="details-grid" style="margin-bottom: 20px;">
+             <div class="details-box">
+                <strong>شماره فاکتور:</strong> {{ invoice.id }}
+            </div>
+             <div class="details-box">
+                <strong>تاریخ صدور:</strong> {{ invoice.issue_date.strftime('%Y-%m-%d') }}
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>شرح محصول/خدمت</th>
+                    <th>تعداد</th>
+                    <th>قیمت واحد</th>
+                    <th>مبلغ کل</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.items %}
+                <tr>
+                    <td>{{ loop.index }}</td>
+                    <td>{{ item.product.name }}</td>
+                    <td>{{ item.quantity }}</td>
+                    <td>{{ "%.2f"|format(item.unit_price) }}</td>
+                    <td>{{ "%.2f"|format(item.quantity * item.unit_price) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="total">
+            <p>جمع کل: {{ "%.2f"|format(invoice.total_amount) }} ریال</p>
+        </div>
+    </div>
+</body>
+</html>

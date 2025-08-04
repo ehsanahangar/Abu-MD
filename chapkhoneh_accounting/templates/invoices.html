@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}لیست فاکتورها{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>لیست فاکتورها</h1>
+    <table class="table table-striped mt-4">
+        <thead>
+            <tr>
+                <th>شماره فاکتور</th>
+                <th>مشتری</th>
+                <th>تاریخ صدور</th>
+                <th>مبلغ کل</th>
+                <th>وضعیت</th>
+                <th>عملیات</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for invoice in invoices %}
+            <tr>
+                <td>{{ invoice.id }}</td>
+                <td>{{ invoice.customer.name }}</td>
+                <td>{{ invoice.issue_date.strftime('%Y-%m-%d') }}</td>
+                <td>{{ "%.2f"|format(invoice.total_amount) }}</td>
+                <td>{{ invoice.status }}</td>
+                <td>
+                    <a href="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}" class="btn btn-sm btn-info" target="_blank">دانلود PDF</a>
+                    <!-- Add other actions like 'View' or 'Edit' later -->
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="text-center">هیچ فاکتوری یافت نشد.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
