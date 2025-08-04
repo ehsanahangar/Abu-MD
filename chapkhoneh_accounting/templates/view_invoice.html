@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}جزئیات فاکتور #{{ invoice.id }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <!-- Invoice Details Card -->
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h3><i class="fas fa-file-invoice"></i> جزئیات فاکتور #{{ invoice.id }}</h3>
+            <a href="{{ url_for('invoice_pdf', invoice_id=invoice.id) }}" class="btn btn-info" target="_blank"><i class="fas fa-print me-2"></i>چاپ/PDF</a>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <h4>مشتری: {{ invoice.customer.name }}</h4>
+                    <p><strong>تاریخ صدور:</strong> {{ invoice.issue_date.strftime('%Y-%m-%d') }}</p>
+                    <p><strong>تاریخ سررسید:</strong> {{ invoice.due_date.strftime('%Y-%m-%d') if invoice.due_date }}</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <h4>مبلغ کل: {{ "%.2f"|format(invoice.total_amount) }} ریال</h4>
+                    <p><strong>وضعیت:</strong> <span class="badge bg-primary">{{ invoice.status }}</span></p>
+                </div>
+            </div>
+            <hr>
+            <h5>آیتم‌های فاکتور</h5>
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>محصول/خدمت</th>
+                        <th>تعداد</th>
+                        <th>قیمت واحد</th>
+                        <th>جمع</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in invoice_items %}
+                    <tr>
+                        <td>{{ item.product.name }}</td>
+                        <td>{{ item.quantity }}</td>
+                        <td>{{ "%.2f"|format(item.unit_price) }}</td>
+                        <td>{{ "%.2f"|format(item.quantity * item.unit_price) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Payments Section -->
+    <div class="row">
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-money-bill-wave"></i> پرداخت‌های ثبت شده</h5>
+                </div>
+                <div class="card-body">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>تاریخ پرداخت</th>
+                                <th>مبلغ</th>
+                                <th>روش پرداخت</th>
+                                <th>جزئیات</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in invoice.payments %}
+                            <tr>
+                                <td>{{ payment.payment_date.strftime('%Y-%m-%d') }}</td>
+                                <td>{{ "%.2f"|format(payment.amount) }}</td>
+                                <td>{{ payment.payment_method }}</td>
+                                <td>{{ payment.cheque_details or '-' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center">هیچ پرداختی ثبت نشده است.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-plus-circle"></i> ثبت پرداخت جدید</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('add_payment', invoice_id=invoice.id) }}" method="post">
+                        <div class="mb-3">
+                            <label for="amount" class="form-label">مبلغ پرداخت (ریال)</label>
+                            <input type="number" class="form-control" id="amount" name="amount" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="payment_date" class="form-label">تاریخ پرداخت</label>
+                            <input type="date" class="form-control" id="payment_date" name="payment_date" required>
+                        </div>
+                        <div class="mb-3">
+                            <label for="payment_method" class="form-label">روش پرداخت</label>
+                            <select class="form-select" id="payment_method" name="payment_method">
+                                <option value="cash">نقدی</option>
+                                <option value="cheque">چک</option>
+                                <option value="transfer">کارت به کارت</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="cheque_details" class="form-label">جزئیات چک (اختیاری)</label>
+                            <input type="text" class="form-control" id="cheque_details" name="cheque_details">
+                        </div>
+                        <button type="submit" class="btn btn-success"><i class="fas fa-save me-2"></i>ثبت پرداخت</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

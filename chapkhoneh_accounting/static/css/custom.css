@@ -1,0 +1,53 @@
+/* Custom CSS for Chapkhoneh Accounting App */
+
+:root {
+    --primary-color: #005A9C; /* A professional blue */
+    --secondary-color: #1E88E5; /* A lighter, vibrant blue */
+    --background-color: #f8f9fa;
+    --text-color: #333;
+    --navbar-bg-color: #004070; /* A darker blue for the navbar */
+    --success-color: #4CAF50;
+    --danger-color: #F44336;
+    --warning-color: #FFC107;
+}
+
+body {
+    background-color: var(--background-color);
+    color: var(--text-color);
+}
+
+.navbar {
+    background-color: var(--navbar-bg-color) !important;
+}
+
+.btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.btn-primary:hover {
+    background-color: var(--secondary-color);
+    border-color: var(--secondary-color);
+}
+
+.btn-danger {
+    background-color: var(--danger-color);
+}
+
+.table th {
+    background-color: var(--primary-color);
+    color: white;
+}
+
+.card-header {
+    background-color: var(--secondary-color);
+    color: white;
+}
+
+a {
+    color: var(--primary-color);
+}
+
+a:hover {
+    color: var(--secondary-color);
+}

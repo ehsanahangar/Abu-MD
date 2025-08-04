@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from flask import Flask, render_template, request, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
+from flask_weasyprint import HTML, CSS
 
 # اپلیکیشن Flask را مقداردهی اولیه کنید
 app = Flask(__name__)
@@ -80,7 +81,13 @@ def index():
 
 @app.route('/dashboard')
 def dashboard():
-    return render_template('dashboard.html')
+    customer_count = Customer.query.count()
+    invoice_count = Invoice.query.count()
+    product_count = Product.query.count()
+    return render_template('dashboard.html',
+                           customer_count=customer_count,
+                           invoice_count=invoice_count,
+                           product_count=product_count)
 
 @app.route('/login')
 def login():
@@ -120,6 +127,59 @@ def products():
 def invoices():
     all_invoices = Invoice.query.order_by(Invoice.issue_date.desc()).all()
     return render_template('invoices.html', invoices=all_invoices)
+
+
+@app.route('/invoice/<int:invoice_id>')
+def view_invoice(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    invoice_items = InvoiceItem.query.filter_by(invoice_id=invoice.id).all()
+    return render_template('view_invoice.html', invoice=invoice, invoice_items=invoice_items)
+
+
+@app.route('/invoice/<int:invoice_id>/add_payment', methods=['POST'])
+def add_payment(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+
+    amount = request.form.get('amount')
+    payment_date_str = request.form.get('payment_date')
+    payment_method = request.form.get('payment_method')
+    cheque_details = request.form.get('cheque_details')
+
+    # Create new payment
+    new_payment = Payment(
+        invoice_id=invoice.id,
+        amount=float(amount),
+        payment_date=datetime.strptime(payment_date_str, '%Y-%m-%d'),
+        payment_method=payment_method,
+        cheque_details=cheque_details
+    )
+    db.session.add(new_payment)
+
+    # Update invoice status
+    total_paid = sum(p.amount for p in invoice.payments) + float(amount)
+    if total_paid >= invoice.total_amount:
+        invoice.status = 'paid'
+    else:
+        invoice.status = 'partially_paid'
+
+    db.session.commit()
+
+    return redirect(url_for('view_invoice', invoice_id=invoice.id))
+
+
+@app.route('/invoice/<int:invoice_id>/pdf')
+def invoice_pdf(invoice_id):
+    invoice = Invoice.query.get_or_404(invoice_id)
+    # Eagerly load related items to avoid separate queries in the template
+    invoice_items = InvoiceItem.query.filter_by(invoice_id=invoice.id).all()
+
+    html = render_template('invoice_pdf.html', invoice=invoice, items=invoice_items)
+
+    # The 'invoice_pdf.html' template should have a specific font for Persian.
+    # If not, WeasyPrint might not render the characters correctly.
+    # I have added font-family: 'DejaVu Sans' in the template which is a common fallback.
+
+    return HTML(string=html).write_pdf()
 
 
 @app.route('/create-invoice', methods=['GET', 'POST'])
