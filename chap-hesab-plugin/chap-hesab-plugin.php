@@ -1567,14 +1567,15 @@ function chap_hesab_enqueue_frontend_assets() {
         wp_enqueue_script( 'bootstrap-js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js', array(), '5.3.0', true );
         // Enqueue JsBarcode for barcode generation
         wp_enqueue_script( 'jsbarcode', 'https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js', array(), '3.11.5', true );
+        // Enqueue Bootstrap JS
+        wp_enqueue_script( 'bootstrap-js', 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js', array(), '5.3.0', true );
         // Enqueue custom app JS
-        wp_enqueue_script( 'chap-hesab-app-js', plugin_dir_url( __FILE__ ) . 'assets/js/app.js', array( 'jquery', 'bootstrap-js', 'jsbarcode' ), '1.0.2', true );
+        wp_enqueue_script( 'chap-hesab-app-js', plugin_dir_url( __FILE__ ) . 'assets/js/app.js', array( 'jquery', 'bootstrap-js' ), '1.0.0', true );
 
         // Pass data to our script
         wp_localize_script( 'chap-hesab-app-js', 'chapHesabData', array(
-            'api_url'   => esc_url_raw( rest_url( 'chap-hesab/v1/' ) ),
-            'nonce'     => wp_create_nonce( 'wp_rest' ),
-            'admin_url' => admin_url( 'admin.php' ),
+            'api_url' => esc_url_raw( rest_url( 'chap-hesab/v1/' ) ),
+            'nonce'   => wp_create_nonce( 'wp_rest' )
         ) );
     }
 }
